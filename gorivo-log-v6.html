@@ -1,0 +1,2203 @@
+<!DOCTYPE html>
+<html lang="bs">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>GorivoLog v4</title>
+<!-- SheetJS za Excel import/export -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<!-- QR Code generisanje -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<!-- QR Code skeniranje kamerom -->
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+
+<!-- ═══ FIREBASE ═══ -->
+<script type="module">
+  import { initializeApp, deleteApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
+  import {
+    getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, createUserWithEmailAndPassword
+  } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
+  import {
+    getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
+    collection, doc, setDoc, addDoc, updateDoc, deleteDoc, onSnapshot, increment, serverTimestamp, getDoc, runTransaction, writeBatch, getDocs
+  } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyAYF4y9nfxu1_43PevH8xv1_F4hgqTUXcE",
+    authDomain: "gorivo-log-v.firebaseapp.com",
+    projectId: "gorivo-log-v",
+    storageBucket: "gorivo-log-v.firebasestorage.app",
+    messagingSenderId: "511659527734",
+    appId: "1:511659527734:web:2e6f6ce65ff739453e5297",
+    measurementId: "G-YHVJH80E6Z"
+  };
+  const FAKE_EMAIL_DOMAIN = "gorivolog-v.local"; // korisničko ime -> username@gorivolog-v.local
+
+  const app = initializeApp(firebaseConfig);
+  const auth = getAuth(app);
+  const db = initializeFirestore(app, {
+    localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() })
+  });
+
+  function toEmail(username){ return username.trim().toLowerCase().replace(/\s+/g,'')+'@'+FAKE_EMAIL_DOMAIN; }
+
+  window.FB = {
+    auth, db,
+    async login(username, password){
+      return signInWithEmailAndPassword(auth, toEmail(username), password);
+    },
+    async logout(){ return signOut(auth); },
+    onAuthChange(cb){ onAuthStateChanged(auth, cb); },
+    async getUserDoc(uid){
+      const snap = await getDoc(doc(db,'users',uid));
+      return snap.exists() ? snap.data() : null;
+    },
+    // Kreira korisnika BEZ odjave trenutno prijavljenog admina (koristi sekundarnu app instancu)
+    async createDriver(username, password, puno_ime, vozilo_id, role){
+      const secondary = initializeApp(firebaseConfig, 'secondary-'+Date.now());
+      const secAuth = getAuth(secondary);
+      try{
+        const cred = await createUserWithEmailAndPassword(secAuth, toEmail(username), password);
+        await setDoc(doc(db,'users',cred.user.uid), {
+          username: username.trim().toLowerCase(), role: role||'vozac', puno_ime: puno_ime||'', vozilo_id: vozilo_id||'', created_at: serverTimestamp()
+        });
+        await signOut(secAuth);
+        await deleteApp(secondary);
+        return cred.user.uid;
+      }catch(err){
+        await deleteApp(secondary).catch(()=>{});
+        throw err;
+      }
+    },
+    // Generička kolekcija: subscribe = live sinhronizacija, funkcije za pisanje
+    col(name){ return collection(db,name); },
+    docRef(name,id){ return doc(db,name,id); },
+    setDoc, addDoc, updateDoc, deleteDoc, onSnapshot, increment, serverTimestamp,
+    // Pretplati se na kolekciju - poziva cb(arrayOfDocsWithId) svaki put kad se nešto promijeni (na bilo kom uređaju)
+    watchCollection(name, cb){
+      return onSnapshot(collection(db,name), snap=>{
+        const arr=[]; snap.forEach(d=>arr.push({id:d.id,...d.data()}));
+        cb(arr);
+      }, err=>console.error('watchCollection',name,err));
+    },
+    watchDoc(path, cb){
+      return onSnapshot(doc(db,path), snap=>cb(snap.exists()?snap.data():null), err=>console.error('watchDoc',path,err));
+    },
+    // Atomska dodjela sljedećeg broja (sprječava duple brojeve kad dva uređaja rade istovremeno)
+    async nextCounter(){
+      const ref=doc(db,'settings','counter');
+      return runTransaction(db, async tx=>{
+        const snap=await tx.get(ref);
+        const cur=(snap.exists()?snap.data().counter:100)+1;
+        tx.set(ref,{counter:cur},{merge:true});
+        return cur;
+      });
+    },
+    newDocId(name){ return doc(collection(db,name)).id; },
+    async batchWrite(ops){
+      // ops: [{type:'set'|'delete', col:'vozila', id:'...', data:{...}}]
+      const b=writeBatch(db);
+      ops.forEach(op=>{
+        const ref=doc(db,op.col,op.id);
+        if(op.type==='delete') b.delete(ref);
+        else b.set(ref,op.data,{merge:!!op.merge});
+      });
+      return b.commit();
+    },
+    async wipeCollection(name){
+      const snap=await getDocs(collection(db,name));
+      const ids=[]; snap.forEach(d=>ids.push(d.id));
+      for(let i=0;i<ids.length;i+=450){
+        const b=writeBatch(db);
+        ids.slice(i,i+450).forEach(id=>b.delete(doc(db,name,id)));
+        await b.commit();
+      }
+    }
+  };
+  window.dispatchEvent(new Event('fb-ready'));
+</script>
+
+<style>
+:root{
+  --bg:#0a0c0b;--surf:#121512;--surf2:#191c19;--surf3:#1f231f;
+  --bord:#252825;--bord2:#303530;
+  --acc:#c8f04a;--acc2:#f0a020;--acc3:#4af0c8;--acc4:#a78bfa;--acc5:#f04a8a;
+  --txt:#dde8dd;--mut:#5a6b5a;--mut2:#8a9b8a;
+  --red:#f04a4a;--redbg:#1e0e0e;--greenbg:#0e1e0e;
+  --radius:7px;
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+body{background:var(--bg);color:var(--txt);font-family:system-ui,-apple-system,sans-serif;font-size:14px;min-height:100vh}
+
+/* HEADER */
+header{background:var(--surf);border-bottom:1px solid var(--bord);padding:10px 16px;position:sticky;top:0;z-index:50;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.logo{font-size:17px;font-weight:900;letter-spacing:2px;color:var(--acc);white-space:nowrap;display:flex;align-items:center;gap:6px}
+.logo-ver{color:var(--mut2);font-size:10px;font-weight:400;letter-spacing:1px}
+.role-switch{display:flex;gap:4px;background:var(--surf2);border:1px solid var(--bord);border-radius:6px;padding:3px}
+.role-btn{background:none;border:none;color:var(--mut2);font-size:11px;font-weight:700;padding:5px 12px;border-radius:4px;cursor:pointer;letter-spacing:.5px;transition:all .15s}
+.role-btn.active{background:var(--acc);color:#0a0c0b}
+nav{display:flex;gap:2px;overflow-x:auto;-webkit-overflow-scrolling:touch;flex:1}
+nav::-webkit-scrollbar{display:none}
+.nav-btn{background:none;border:1px solid transparent;color:var(--mut2);font-size:11px;padding:6px 10px;cursor:pointer;border-radius:5px;white-space:nowrap;transition:all .15s;letter-spacing:.3px}
+.nav-btn.active{color:var(--acc);border-color:var(--acc);background:rgba(200,240,74,.06)}
+.nav-btn:hover:not(.active){color:var(--txt)}
+
+/* APP */
+.app{max-width:1000px;margin:0 auto;padding:16px}
+.tab{display:none}.tab.active{display:block}
+
+/* DRIVER MODE */
+body.driver-mode .admin-only{display:none!important}
+body.driver-mode nav{display:none}
+
+/* CARDS */
+.card{background:var(--surf);border:1px solid var(--bord);border-radius:var(--radius);padding:16px;margin-bottom:14px}
+.card-title{font-size:12px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--acc);margin-bottom:14px;display:flex;align-items:center;justify-content:space-between;gap:8px}
+.card-title-left{display:flex;align-items:center;gap:8px}
+
+/* FORM */
+.fg{display:flex;flex-direction:column;gap:5px;margin-bottom:12px}
+.fg label{font-size:10px;color:var(--mut2);letter-spacing:1px;text-transform:uppercase}
+.fg input,.fg select{background:var(--surf2);border:1px solid var(--bord2);color:var(--txt);padding:10px 13px;border-radius:6px;font-size:14px;outline:none;transition:border-color .2s;width:100%;font-family:inherit}
+.fg input:focus,.fg select:focus{border-color:var(--acc)}
+.fg select option{background:var(--surf2)}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
+.grid4{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:12px}
+.full{grid-column:1/-1}
+
+/* BUTTONS */
+.btn{padding:10px 18px;border:none;border-radius:6px;cursor:pointer;font-size:13px;font-weight:700;letter-spacing:.3px;transition:all .15s;display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+.btn-p{background:var(--acc);color:#0a0c0b}.btn-p:hover{filter:brightness(1.1)}
+.btn-s{background:transparent;color:var(--mut2);border:1px solid var(--bord2)}.btn-s:hover{border-color:var(--mut2);color:var(--txt)}
+.btn-o{background:transparent;color:var(--acc2);border:1px solid rgba(240,160,32,.3)}.btn-o:hover{background:rgba(240,160,32,.08)}
+.btn-gr{background:transparent;color:var(--acc3);border:1px solid rgba(74,240,200,.3)}.btn-gr:hover{background:rgba(74,240,200,.08)}
+.btn-r{background:transparent;color:var(--red);border:1px solid transparent;padding:5px 10px;font-size:12px}.btn-r:hover{border-color:var(--red)}
+.btn-qr{background:transparent;color:var(--acc4);border:1px solid rgba(167,139,250,.3);padding:5px 10px;font-size:12px}.btn-qr:hover{background:rgba(167,139,250,.08)}
+.btn-pr{background:rgba(200,240,74,.08);color:var(--acc);border:1px solid rgba(200,240,74,.2);padding:6px 13px;font-size:12px}
+.btn-xl{background:rgba(74,240,200,.08);color:var(--acc3);border:1px solid rgba(74,240,200,.25);padding:6px 13px;font-size:12px}
+.btn-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.btn-lg{padding:16px 24px;font-size:16px;width:100%;justify-content:center}
+
+/* TAGS */
+.tag{display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:700}
+.t-k{background:rgba(200,240,74,.08);color:var(--acc)}
+.t-b{background:rgba(167,139,250,.08);color:var(--acc4)}
+.t-m{background:rgba(240,160,32,.08);color:var(--acc2)}
+.t-f{background:rgba(74,240,200,.1);color:var(--acc3);border:1px solid rgba(74,240,200,.15)}
+.t-g{background:rgba(240,160,32,.1);color:var(--acc2);border:1px solid rgba(240,160,32,.15)}
+.t-l{background:rgba(200,240,74,.1);color:var(--acc)}
+.t-ok{background:var(--greenbg);color:var(--acc);border:1px solid rgba(200,240,74,.15)}
+.t-warn{background:var(--redbg);color:var(--red);border:1px solid rgba(240,74,74,.15)}
+.t-new{background:rgba(240,74,138,.1);color:var(--acc5);border:1px solid rgba(240,74,138,.2)}
+
+/* TABLE */
+.tw{overflow-x:auto;-webkit-overflow-scrolling:touch}
+table{width:100%;border-collapse:collapse;min-width:500px}
+th{font-size:10px;letter-spacing:.8px;text-transform:uppercase;color:var(--mut2);text-align:left;padding:9px 12px;border-bottom:1px solid var(--bord);white-space:nowrap}
+td{padding:9px 12px;border-bottom:1px solid rgba(37,40,37,.6);font-size:13px;vertical-align:middle}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:rgba(200,240,74,.015)}
+td.mono{font-family:monospace;font-size:12px}
+.td-edit input,.td-edit select{background:var(--surf3);border:1px solid var(--acc);color:var(--txt);padding:5px 8px;border-radius:5px;font-size:12px;width:100%;font-family:inherit;outline:none}
+.td-edit select{background:var(--surf3)}
+
+/* SIGNAL / ALERT */
+.signal{padding:10px 14px;border-radius:6px;font-size:13px;margin-bottom:12px;display:flex;align-items:flex-start;gap:8px}
+.sig-ok{background:var(--greenbg);color:var(--acc);border:1px solid rgba(200,240,74,.15)}
+.sig-warn{background:var(--redbg);color:var(--red);border:1px solid rgba(240,74,74,.15)}
+.sig-info{background:rgba(74,240,200,.04);color:var(--acc3);border:1px solid rgba(74,240,200,.12)}
+.sig-tip{background:rgba(167,139,250,.05);color:var(--acc4);border:1px solid rgba(167,139,250,.15)}
+
+/* STATS */
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px}
+.stat{background:var(--surf);border:1px solid var(--bord);border-radius:var(--radius);padding:14px}
+.stat-n{font-size:28px;font-weight:900;color:var(--acc);line-height:1;font-variant-numeric:tabular-nums}
+.stat-l{font-size:10px;color:var(--mut2);letter-spacing:.8px;margin-top:4px;text-transform:uppercase}
+
+/* VEHICLE SEARCH DROPDOWN */
+.vsearch-wrap{position:relative}
+.vdrop{position:absolute;top:100%;left:0;right:0;background:var(--surf);border:1px solid var(--acc);border-radius:6px;z-index:30;max-height:220px;overflow-y:auto;display:none;box-shadow:0 8px 24px rgba(0,0,0,.4)}
+.vdrop.open{display:block}
+.vdrop-item{padding:10px 14px;cursor:pointer;border-bottom:1px solid var(--bord);transition:background .1s}
+.vdrop-item:hover{background:var(--surf2)}
+.vdrop-item:last-child{border-bottom:none}
+.vdrop-reg{font-weight:700;font-family:monospace;color:var(--acc);font-size:14px}
+.vdrop-sub{font-size:11px;color:var(--mut2);margin-top:2px}
+
+/* FILTER */
+.fil{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center}
+.fil input,.fil select{background:var(--surf2);border:1px solid var(--bord2);color:var(--txt);padding:7px 12px;border-radius:6px;font-size:13px;outline:none}
+.fil input:focus,.fil select:focus{border-color:var(--acc)}
+.fil-count{font-size:12px;color:var(--mut2);margin-left:auto}
+
+/* STAVKA */
+.stavka{background:var(--surf2);border:1px solid var(--bord2);border-radius:var(--radius);padding:13px;margin-bottom:8px}
+.stavka-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+.stavka-reg{font-size:16px;font-weight:800;color:var(--acc);font-family:monospace}
+.sig-prev{height:42px;border:1px dashed var(--bord2);border-radius:5px;display:flex;align-items:center;justify-content:center;cursor:pointer;overflow:hidden;transition:border-color .2s}
+.sig-prev:hover{border-color:var(--acc)}
+.sig-prev img{height:100%;width:auto;object-fit:contain}
+
+/* EMPTY */
+.empty{text-align:center;padding:36px;color:var(--mut);font-size:13px}
+
+/* EXCEL DROP ZONE */
+.drop-zone{border:2px dashed var(--bord2);border-radius:var(--radius);padding:32px;text-align:center;cursor:pointer;transition:all .2s;margin-bottom:12px}
+.drop-zone:hover,.drop-zone.drag-over{border-color:var(--acc);background:rgba(200,240,74,.04)}
+.drop-zone-icon{font-size:32px;margin-bottom:8px}
+.drop-zone-text{color:var(--mut2);font-size:13px}
+.drop-zone-sub{color:var(--mut);font-size:11px;margin-top:4px}
+
+/* IMPORT PREVIEW */
+.import-preview{background:var(--surf2);border:1px solid var(--bord2);border-radius:var(--radius);max-height:280px;overflow:auto;margin-bottom:12px}
+.import-preview table{min-width:100%}
+.import-preview th{background:var(--surf3);position:sticky;top:0}
+.import-row-ok td:first-child{border-left:3px solid var(--acc)}
+.import-row-warn td:first-child{border-left:3px solid var(--acc2)}
+.import-row-err td:first-child{border-left:3px solid var(--red)}
+
+/* QR PRINT GRID */
+.qr-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;padding:16px}
+.qr-item{border:1px solid #ccc;border-radius:4px;padding:10px;text-align:center;break-inside:avoid}
+.qr-item-reg{font-family:monospace;font-size:11px;font-weight:700;margin-top:6px;color:#000}
+.qr-item-sub{font-size:9px;color:#666;margin-top:2px}
+
+/* TOAST */
+#toast{position:fixed;bottom:20px;right:16px;background:var(--acc);color:#0a0c0b;font-size:13px;font-weight:700;padding:11px 18px;border-radius:6px;opacity:0;transform:translateY(8px);transition:all .25s;pointer-events:none;z-index:999;max-width:calc(100vw - 32px)}
+#toast.show{opacity:1;transform:translateY(0)}
+
+/* MODALS */
+.modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:200;align-items:center;justify-content:center;padding:16px}
+.modal.open{display:flex}
+.modal-box{background:var(--surf);border:1px solid var(--bord);border-radius:10px;width:min(560px,100%);max-height:90vh;overflow-y:auto}
+.modal-head{padding:14px 16px;border-bottom:1px solid var(--bord);display:flex;align-items:center;justify-content:space-between}
+.modal-head h3{font-size:14px;font-weight:700;color:var(--acc);letter-spacing:.5px}
+.modal-body{padding:16px}
+.modal-foot{padding:12px 16px;border-top:1px solid var(--bord);display:flex;gap:8px;justify-content:flex-end}
+
+/* SIGNATURE MODAL */
+#sigModal .modal-box{width:min(500px,100%)}
+#sigCanvas{display:block;width:100%;height:150px;background:#fff;border-radius:6px;cursor:crosshair;touch-action:none;border:1px solid var(--bord2)}
+
+/* PRINT MODAL */
+#printModal{z-index:300}
+#printModal .modal-box{width:min(794px,98vw);max-height:97vh;background:#fff}
+#printModal .modal-head{border-bottom:1px solid #ddd}
+#printModal .modal-head h3{color:#222}
+.ptbar{padding:10px 14px;border-bottom:1px solid var(--bord);display:flex;gap:8px;align-items:center}
+
+/* OTPREMNICA PRINT */
+.otp{font-family:Arial,sans-serif;font-size:11px;padding:22px 28px;color:#000}
+.otp-top{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #000;padding-bottom:10px;margin-bottom:12px}
+.otp-co strong{font-size:14px;display:block;margin-bottom:2px}
+.otp-co{font-size:10px;color:#444;line-height:1.65}
+.otp-ttl{font-size:22px;font-weight:900;letter-spacing:2px;text-align:right}
+.otp-meta{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;border:1px solid #000;margin-bottom:10px}
+.otp-mb{padding:7px 10px;border-right:1px solid #ccc}
+.otp-mb:last-child{border-right:none}
+.otp-ml{font-size:8px;text-transform:uppercase;letter-spacing:1px;color:#888;margin-bottom:2px}
+.otp-mv{font-size:12px;font-weight:700}
+.otp-ms{font-size:9px;color:#555;margin-top:1px}
+.otp table{width:100%;border-collapse:collapse;margin-bottom:10px;font-size:10px}
+.otp table th{background:#000;color:#fff;padding:6px 8px;text-align:left;font-size:9px;letter-spacing:.5px}
+.otp table td{padding:6px 8px;border-bottom:1px solid #e0e0e0}
+.otp table tr:nth-child(even) td{background:#f8f8f8}
+.otp-sigs{display:grid;grid-template-columns:1fr 1fr 1fr;gap:20px;margin-top:18px}
+.otp-sig{border-top:1px solid #000;padding-top:7px}
+.otp-sig-lbl{font-size:8px;text-transform:uppercase;letter-spacing:1px;color:#777}
+.otp-sig-line{height:30px;border-bottom:1px dashed #ccc;margin:5px 0 3px}
+.otp-sig-nm{font-size:10px;color:#333}
+.otp-foot{font-size:8px;color:#bbb;border-top:1px solid #eee;padding-top:5px;margin-top:14px;display:flex;justify-content:space-between}
+
+/* DRIVER (VOZAČ) MODE */
+.driver-screen{display:flex;flex-direction:column;gap:14px}
+.driver-big-btn{background:var(--surf);border:2px solid var(--acc);border-radius:12px;padding:28px 20px;text-align:center;cursor:pointer;transition:all .2s}
+.driver-big-btn:hover{background:rgba(200,240,74,.06);transform:translateY(-1px)}
+.driver-big-icon{font-size:40px;margin-bottom:8px}
+.driver-big-label{font-size:18px;font-weight:700;color:var(--acc);letter-spacing:.5px}
+.driver-big-sub{font-size:12px;color:var(--mut2);margin-top:4px}
+
+/* RAZDUZENJE */
+.raz-box{border:1px solid var(--bord2);border-radius:var(--radius);padding:14px;margin-bottom:12px}
+.raz-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+.raz-name{font-size:15px;font-weight:800;color:var(--acc3);font-family:monospace}
+.raz-row{display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid rgba(37,40,37,.6);font-size:13px}
+.raz-row:last-child{border-bottom:none;font-weight:700;border-top:1px solid var(--bord2);padding-top:9px;margin-top:3px}
+.raz-val{font-family:monospace;font-weight:700;font-size:14px}
+
+/* REPORT BAR */
+.rep-item{padding:9px 0;border-bottom:1px solid var(--bord)}
+.rep-item:last-child{border-bottom:none}
+.rep-bar-wrap{height:4px;background:var(--bord2);border-radius:2px;margin-top:6px}
+.rep-bar{height:100%;border-radius:2px}
+
+@media print{
+  body>*:not(#printModal){display:none!important}
+  #printModal{display:flex!important;position:static;background:none}
+  #printModal .modal-box{width:100%;max-width:100%;box-shadow:none;border-radius:0;max-height:none}
+  .ptbar{display:none!important}
+  .qr-grid{page-break-inside:auto}
+  .qr-item{page-break-inside:avoid}
+}
+@media(max-width:600px){
+  .stats{grid-template-columns:1fr 1fr}
+  .grid2,.grid3,.grid4{grid-template-columns:1fr}
+  .otp-meta{grid-template-columns:1fr 1fr}
+}
+</style>
+</head>
+<body>
+
+<!-- ═══ LOGIN EKRAN ═══ -->
+<div id="loginScreen" style="position:fixed;inset:0;background:var(--bg);z-index:500;display:flex;align-items:center;justify-content:center;padding:20px">
+  <div style="width:100%;max-width:340px">
+    <div style="text-align:center;margin-bottom:28px">
+      <div style="font-size:38px">⛽</div>
+      <div class="logo" style="justify-content:center;font-size:22px">GORIVO<span class="logo-ver">LOG v4</span></div>
+    </div>
+    <div class="card">
+      <div class="fg full"><label>Korisničko ime</label><input id="li-user" placeholder="npr. mirko" autocomplete="username" autocapitalize="off"></div>
+      <div class="fg full"><label>Lozinka</label><input id="li-pass" type="password" placeholder="••••••••" autocomplete="current-password"></div>
+      <button class="btn btn-p btn-lg" style="width:100%;margin-top:6px" onclick="doLogin()">Prijava</button>
+      <div id="li-err" style="color:var(--red);font-size:12px;margin-top:10px;text-align:center"></div>
+      <div id="li-loading" style="display:none;text-align:center;color:var(--mut2);font-size:12px;margin-top:10px">Prijavljivanje...</div>
+    </div>
+  </div>
+</div>
+
+<div id="appRoot" style="display:none">
+
+<header>
+  <div class="logo">⛽ GORIVO<span class="logo-ver">LOG v4</span></div>
+
+  <div class="role-switch" id="user-info" style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--mut2)">
+    <span id="ui-name">—</span>
+    <button class="role-btn" onclick="doLogout()">🚪 Odjava</button>
+  </div>
+
+  <nav id="main-nav" class="admin-only">
+    <button class="nav-btn active" onclick="showTab('tocenje',this)">📋 Točenje</button>
+    <button class="nav-btn" onclick="showTab('treca',this)">🏢 Treća lica</button>
+    <button class="nav-btn" onclick="showTab('transfer',this)">🔄 Transfer</button>
+    <button class="nav-btn" onclick="showTab('ulaz',this)">🚚 Ulaz</button>
+    <button class="nav-btn" onclick="showTab('pregled',this)">📦 Pregled</button>
+    <button class="nav-btn" onclick="showTab('arhiva',this)">🚛 Arhiva</button>
+    <button class="nav-btn" onclick="showTab('razduzenje',this)">⚖️ Razduženje</button>
+    <button class="nav-btn" onclick="showTab('izvjestaj',this)">📊 Izvještaj</button>
+    <button class="nav-btn" onclick="showTab('vozila',this)">🗄️ Vozila</button>
+    <button class="nav-btn" onclick="showTab('postavke',this)">⚙️ Postavke</button>
+  </nav>
+</header>
+
+<div class="app">
+
+<!-- ═══ VOZAČ MODE ═══ -->
+<div id="vozac-mode" style="display:none">
+  <div class="driver-screen">
+    <div class="signal sig-info">Vozač cistijerne — odaberi akciju</div>
+    <div class="driver-big-btn" onclick="vozacGoTo('tocenje')">
+      <div class="driver-big-icon">📋</div>
+      <div class="driver-big-label">Nova otpremnica — točenje</div>
+      <div class="driver-big-sub">Unesi sva točenja za ovu turu</div>
+    </div>
+    <div class="driver-big-btn" onclick="vozacGoTo('transfer')">
+      <div class="driver-big-icon">🔄</div>
+      <div class="driver-big-label">Transfer goriva</div>
+      <div class="driver-big-sub">Pretakanje između cistijerni</div>
+    </div>
+    <div class="driver-big-btn" onclick="vozacGoTo('treca')">
+      <div class="driver-big-icon">🏢</div>
+      <div class="driver-big-label">Točenje — treća lica</div>
+      <div class="driver-big-sub">Sipanje gorivo firmi/vozilu van naše baze</div>
+    </div>
+  </div>
+</div>
+<button id="vozac-back" style="display:none;margin:0 0 14px" class="btn btn-s" onclick="vozacBackToMenu()">⬅ Nazad na meni</button>
+
+<!-- ═══ TAB: TOČENJE ═══ -->
+<div class="tab active" id="tab-tocenje">
+  <div class="card" id="otp-hdr">
+    <div class="card-title"><span class="card-title-left">📋 Nova otpremnica</span></div>
+    <div class="grid4">
+      <div class="fg"><label>Datum</label><input type="date" id="otp-dat"></div>
+      <div class="fg"><label>Cisterna</label><select id="otp-cist"><option value="">— odaberi —</option></select></div>
+      <div class="fg">
+        <label>Gradilište</label>
+        <div style="display:flex;gap:8px">
+          <select id="otp-grad" style="flex:1"><option value="">— odaberi —</option></select>
+          <button type="button" class="btn btn-qr" onclick="addNewGradiliste()" style="white-space:nowrap">➕ Novo</button>
+        </div>
+      </div>
+      <div class="fg"><label>Vrsta goriva</label>
+        <select id="otp-gor"><option>Euro Dizel</option><option>Dizel D2</option><option>BMB 95</option><option>BMB 98</option></select>
+      </div>
+      <div class="fg" style="grid-column:1/3"><label>Broj lista (ostaviti prazno = auto)</label><input type="text" id="otp-broj" placeholder="OTP-2026-xxx"></div>
+      <div class="fg" style="grid-column:3/5;justify-content:flex-end;padding-top:16px">
+        <button class="btn btn-p btn-lg" onclick="startOtp()">▶ Počni unos stavki</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="otp-active" style="display:none">
+    <div class="signal sig-ok" id="otp-bar"></div>
+    <div class="card">
+      <div class="card-title"><span class="card-title-left">+ Dodaj vozilo na otpremnicu</span></div>
+      <div class="vsearch-wrap fg">
+        <label>Traži vozilo (registracija ili ime vozača)</label>
+        <div style="display:flex;gap:8px">
+          <input type="text" id="veh-q" placeholder="npr. A01-K, MAN, Mirko..." autocomplete="off" oninput="searchVeh(this.value)" style="flex:1">
+          <button type="button" class="btn btn-qr" onclick="openScanner()" style="white-space:nowrap">📷 Skeniraj QR</button>
+        </div>
+        <div class="vdrop" id="veh-drop"></div>
+      </div>
+      <div id="entry-form" style="display:none">
+        <div class="grid4">
+          <div class="fg"><label>Registracija</label><input id="e-reg" readonly style="color:var(--acc);font-weight:800;font-family:monospace"></div>
+          <div class="fg"><label>Tip</label><input id="e-tip" readonly></div>
+          <div class="fg full"><label>Ime i prezime vozača</label><input id="e-voz" placeholder="Ime Prezime"></div>
+          <div class="fg full"><label>Firma</label><input id="e-fir" readonly style="color:var(--acc3)"></div>
+          <div class="fg" id="kmP-g"><label>Kilometraža — početak</label><input type="number" id="e-kmp" min="0" placeholder="125430"></div>
+          <div class="fg" id="kmK-g"><label>Kilometraža — kraj</label><input type="number" id="e-kmk" min="0" placeholder="125620"></div>
+          <div class="fg" id="msP-g" style="display:none"><label>Moto sati — početak</label><input type="number" id="e-msp" min="0" step=".1" placeholder="4820"></div>
+          <div class="fg" id="msK-g" style="display:none"><label>Moto sati — kraj</label><input type="number" id="e-msk" min="0" step=".1" placeholder="4835"></div>
+          <div class="fg"><label>Litara točeno</label><input type="number" id="e-lit" min="0" step=".5" placeholder="350"></div>
+          <div class="fg"><label>Potpis vozača</label>
+            <div class="sig-prev" id="e-sig-p" onclick="openSig('entry')"><span id="e-sig-lbl" style="color:var(--mut2);font-size:12px">👆 Dodirni za potpis</span></div>
+          </div>
+        </div>
+        <div class="btn-row">
+          <button class="btn btn-p" onclick="addStavka()">+ Dodaj na listu</button>
+          <button class="btn btn-s" onclick="cancelEntry()">Otkaži</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title"><span class="card-title-left">📝 Stavke</span><span id="otp-ukup" style="font-size:14px;color:var(--acc);font-family:monospace"></span></div>
+      <div id="stavke-list"><div class="empty">Još nema vozila</div></div>
+    </div>
+    <div class="btn-row" style="margin-bottom:20px">
+      <button class="btn btn-p btn-lg" onclick="zatvoriOtp()" style="flex:2">✓ Zatvori i štampaj</button>
+      <button class="btn btn-s" onclick="odustaniOtp()" style="flex:1">✕ Odustani</button>
+    </div>
+  </div>
+
+  <div class="card admin-only">
+    <div class="card-title">🕐 Danas</div>
+    <div id="danas-list"><div class="empty">Nema unosa za danas</div></div>
+  </div>
+</div>
+
+<!-- ═══ TAB: TREĆA LICA ═══ -->
+<div class="tab" id="tab-treca">
+  <div class="card" id="tl-hdr">
+    <div class="card-title"><span class="card-title-left">🏢 Nova otpremnica — točenje trećim licima</span></div>
+    <div class="signal sig-tip">Za firme/vozila koja NISU naša sestrinska firma i nikad neće biti trajno u bazi vozila. Ovo je odvojeno od glavnih otpremnica i posebno se fakturiše.</div>
+    <div class="grid4">
+      <div class="fg"><label>Datum</label><input type="date" id="tl-dat"></div>
+      <div class="fg"><label>Cisterna</label><select id="tl-cist"><option value="">— odaberi —</option></select></div>
+      <div class="fg full">
+        <label>Firma (treće lice)</label>
+        <div style="display:flex;gap:8px">
+          <select id="tl-fir" style="flex:1"><option value="">— odaberi —</option></select>
+          <button type="button" class="btn btn-qr" onclick="addNewTrecaFirma()" style="white-space:nowrap">➕ Nova firma</button>
+        </div>
+        <div class="signal sig-tip admin-only" style="margin-top:6px">Firme se mogu dodavati i uređivati u Postavkama (⚙️).</div>
+      </div>
+      <div class="fg"><label>Vrsta goriva</label>
+        <select id="tl-gor"><option>Euro Dizel</option><option>Dizel D2</option><option>BMB 95</option><option>BMB 98</option></select>
+      </div>
+      <div class="fg" style="grid-column:1/3"><label>Broj lista (ostaviti prazno = auto)</label><input type="text" id="tl-broj" placeholder="OTP3-2026-xxx"></div>
+      <div class="fg" style="grid-column:3/5;justify-content:flex-end;padding-top:16px">
+        <button class="btn btn-p btn-lg" onclick="startOtp3()">▶ Počni unos stavki</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="tl-active" style="display:none">
+    <div class="signal sig-ok" id="tl-bar"></div>
+    <datalist id="tl-reg-list"></datalist>
+    <datalist id="tl-voz-list"></datalist>
+    <div class="card">
+      <div class="card-title"><span class="card-title-left">+ Dodaj vozilo (ručni unos, ne čuva se trajno u bazu)</span></div>
+      <div class="grid4">
+        <div class="fg"><label>Registracija</label><input id="tl-reg" list="tl-reg-list" placeholder="npr. E12-X-999" oninput="this.value=this.value.toUpperCase()"></div>
+        <div class="fg full"><label>Ime i prezime vozača</label><input id="tl-voz" list="tl-voz-list" placeholder="Ime Prezime"></div>
+        <div class="fg full"><label>Napomena (opciono)</label><input id="tl-nap" placeholder="npr. bager, kamion dobavljača..."></div>
+        <div class="fg"><label>Litara točeno</label><input type="number" id="tl-lit" min="0" step=".5" placeholder="200"></div>
+        <div class="fg"><label>Potpis primaoca</label>
+          <div class="sig-prev" id="tl-sig-p" onclick="openSig('treca')"><span id="tl-sig-lbl" style="color:var(--mut2);font-size:12px">👆 Dodirni za potpis</span></div>
+        </div>
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-p" onclick="addStavka3()">+ Dodaj na listu</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title"><span class="card-title-left">📝 Stavke</span><span id="tl-ukup" style="font-size:14px;color:var(--acc);font-family:monospace"></span></div>
+      <div id="tl-stavke-list"><div class="empty">Još nema stavki</div></div>
+    </div>
+    <div class="btn-row" style="margin-bottom:20px">
+      <button class="btn btn-p btn-lg" onclick="zatvoriTreca()" style="flex:2">✓ Zatvori i štampaj</button>
+      <button class="btn btn-s" onclick="odustaniTreca()" style="flex:1">✕ Odustani</button>
+    </div>
+  </div>
+
+  <div class="card admin-only">
+    <div class="card-title">📋 Ranije otpremnice — treća lica</div>
+    <div id="tl-lista"><div class="empty">Nema unosa</div></div>
+  </div>
+</div>
+
+<!-- ═══ TAB: TRANSFER ═══ -->
+<div class="tab" id="tab-transfer">
+  <div class="card">
+    <div class="card-title">🔄 Transfer — cisterna → cisterna</div>
+    <div class="signal sig-tip">Pretakanje goriva između cistijerni. Oba vozača moraju potpisati.</div>
+    <div class="grid4">
+      <div class="fg" style="grid-column:1/3"><label>Datum i vrijeme</label><input type="datetime-local" id="tr-dat"></div>
+      <div class="fg" style="grid-column:3/5"><label>Lokacija pretakanja</label><input id="tr-lok" placeholder="npr. Gradilište Ponirak"></div>
+      <div class="fg" style="grid-column:1/3"><label>Cisterna koja DAJE ➖</label><select id="tr-daje"><option value="">—</option></select></div>
+      <div class="fg" style="grid-column:3/5"><label>Cisterna koja PRIMA ➕</label><select id="tr-prima"><option value="">—</option></select></div>
+      <div class="fg"><label>Vrsta goriva</label><select id="tr-gor"><option>Euro Dizel</option><option>Dizel D2</option></select></div>
+      <div class="fg"><label>Litara</label><input type="number" id="tr-lit" min="0" step=".5" placeholder="800"></div>
+      <div class="fg"><label>Potpis — vozač cistijerne koja DAJE</label><div class="sig-prev" id="tr-s1-p" onclick="openSig('tr1')"><span style="color:var(--mut2);font-size:12px">👆 Potpis</span></div></div>
+      <div class="fg"><label>Potpis — vozač cistijerne koja PRIMA</label><div class="sig-prev" id="tr-s2-p" onclick="openSig('tr2')"><span style="color:var(--mut2);font-size:12px">👆 Potpis</span></div></div>
+    </div>
+    <button class="btn btn-o" onclick="spremiTr()">✓ Sačuvaj transfer</button>
+  </div>
+  <div class="card admin-only">
+    <div class="card-title">📋 Transferi</div>
+    <div id="lst-tr"><div class="empty">Nema transfera</div></div>
+  </div>
+</div>
+
+<!-- ═══ TAB: ULAZ ═══ -->
+<div class="tab" id="tab-ulaz">
+  <div class="card">
+    <div class="card-title">🚚 Ulaz goriva od dobavljača</div>
+    <div class="grid4">
+      <div class="fg" style="grid-column:1/3"><label>Datum i vrijeme</label><input type="datetime-local" id="ul-dat"></div>
+      <div class="fg" style="grid-column:3/5"><label>Cisterna</label><select id="ul-cist"><option value="">—</option></select></div>
+      <div class="fg" style="grid-column:1/3"><label>Dobavljač</label><input id="ul-dob" placeholder="Naziv dobavljača d.o.o."></div>
+      <div class="fg" style="grid-column:3/5"><label>Br. otpremnice dobavljača</label><input id="ul-brdob" placeholder="DOB-2026-0881"></div>
+      <div class="fg"><label>Vrsta goriva</label><select id="ul-gor"><option>Euro Dizel</option><option>Dizel D2</option></select></div>
+      <div class="fg"><label>Litara preuzeto</label><input type="number" id="ul-lit" min="0" step=".5" placeholder="5000"></div>
+      <div class="fg" style="grid-column:1/5"><label>Napomena</label><input id="ul-nap" placeholder="Opcionalno..."></div>
+    </div>
+    <button class="btn btn-o" onclick="spremiUl()" id="ul-btn">✓ Sačuvaj ulaz</button>
+    <button class="btn btn-s admin-only" onclick="openKorekcija()" style="margin-left:8px">⚖ Korekcija stanja cisterne</button>
+  </div>
+  <div class="card admin-only">
+    <div class="card-title">📋 Ulazi</div>
+    <div id="lst-ul"><div class="empty">Nema unosa</div></div>
+  </div>
+</div>
+
+<!-- ═══ TAB: PREGLED ═══ -->
+<div class="tab" id="tab-pregled">
+  <div class="fil">
+    <input type="date" id="fil-od"><input type="date" id="fil-do">
+    <select id="fil-cist"><option value="">Sve cistijerne</option></select>
+    <select id="fil-grad"><option value="">Sva gradilišta</option></select>
+    <button class="btn btn-s" onclick="renderPregled()">🔍</button>
+    <button class="btn btn-s" onclick="resetFil()">✕</button>
+  </div>
+  <div class="card">
+    <div class="card-title">📦 Sve otpremnice</div>
+    <div class="tw" id="tbl-pregled"><div class="empty">Nema podataka</div></div>
+  </div>
+</div>
+
+<!-- ═══ TAB: ARHIVA ═══ -->
+<div class="tab" id="tab-arhiva">
+  <div class="card">
+    <div class="card-title">🔍 Pretraži vozilo</div>
+    <div class="vsearch-wrap fg">
+      <label>Registracija, model ili vozač</label>
+      <input type="text" id="arh-q" placeholder="Upiši da pretražiš..." oninput="renderArhiva(this.value)">
+    </div>
+  </div>
+  <div id="arh-res"></div>
+</div>
+
+<!-- ═══ TAB: RAZDUŽENJE ═══ -->
+<div class="tab" id="tab-razduzenje">
+  <div class="fil">
+    <input type="date" id="raz-od">
+    <input type="date" id="raz-do">
+    <button class="btn btn-s" onclick="renderRaz()">🔍 Prikaži</button>
+    <button class="btn btn-s" onclick="setRazToday()">Danas</button>
+  </div>
+  <div class="signal sig-info">Ulaz od dobavljača + primljeno od druge cistijerne − točeno vozilima − dato drugoj cistijerni = saldo</div>
+  <div id="raz-content"><div class="empty">Odaberi period i klikni Prikaži</div></div>
+</div>
+
+<!-- ═══ TAB: IZVJEŠTAJ ═══ -->
+<div class="tab" id="tab-izvjestaj">
+  <div class="stats" id="stats-g"></div>
+  <div class="grid2" style="gap:14px">
+    <div class="card"><div class="card-title">🏢 Po firmi</div><div id="rep-f"></div></div>
+    <div class="card"><div class="card-title">📍 Po gradilištu</div><div id="rep-g"></div></div>
+  </div>
+  <div class="card">
+    <div class="card-title">🚛 Po tipu vozila</div>
+    <div class="tw"><table><thead><tr><th>Tip</th><th>Vozila</th><th>Točenja</th><th>Ukupno litara</th></tr></thead><tbody id="rep-t"></tbody></table></div>
+  </div>
+</div>
+
+<!-- ═══ TAB: VOZILA (baza + Excel import) ═══ -->
+<div class="tab" id="tab-vozila">
+  <!-- EXCEL IMPORT -->
+  <div class="card">
+    <div class="card-title">
+      <span class="card-title-left">📥 Import vozila iz Excela</span>
+      <div class="btn-row">
+        <button class="btn btn-xl" onclick="downloadTemplate()">⬇ Preuzmi predložak</button>
+      </div>
+    </div>
+    <div class="signal sig-tip">
+      Preuzmi predložak, popuni ga u Excelu i uvezi ovdje. Kolone: Registracija | Tip | Model | Firma | Vozač
+    </div>
+    <div class="drop-zone" id="drop-zone" onclick="document.getElementById('excel-file').click()"
+      ondragover="e=>e.preventDefault()" ondrop="handleDrop(event)">
+      <div class="drop-zone-icon">📊</div>
+      <div class="drop-zone-text">Prevuci Excel fajl ovdje ili klikni da odabereš</div>
+      <div class="drop-zone-sub">.xlsx, .xls, .csv</div>
+    </div>
+    <input type="file" id="excel-file" accept=".xlsx,.xls,.csv" style="display:none" onchange="handleFile(this)">
+    <div id="import-preview" style="display:none">
+      <div id="import-stats" style="margin-bottom:8px;font-size:13px;color:var(--mut2)"></div>
+      <div class="import-preview" id="import-tbl"></div>
+      <div class="btn-row">
+        <button class="btn btn-p" onclick="confirmImport()">✓ Uvezi vozila</button>
+        <button class="btn btn-s" onclick="cancelImport()">✕ Otkaži</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- QR KODOVI -->
+  <div class="card admin-only">
+    <div class="card-title">
+      <span class="card-title-left">📱 QR kodovi za vozila</span>
+      <button class="btn btn-qr" onclick="printAllQR()">🖨 Štampaj sve QR kodove</button>
+    </div>
+    <div class="signal sig-tip">QR kod sadrži registraciju vozila. Vozač skenira kamerom — vozilo se automatski učita, nema tipkanja.</div>
+  </div>
+
+  <!-- BAZA VOZILA — editabilna -->
+  <div class="card">
+    <div class="card-title">
+      <span class="card-title-left">🗄️ Baza vozila</span>
+      <button class="btn btn-p" onclick="openAddVehicle()">+ Novo vozilo</button>
+    </div>
+    <div class="fil">
+      <input type="text" id="vfil-q" placeholder="Pretraži registraciju, vozača, model..." oninput="renderVozilaTbl()">
+      <select id="vfil-tip" onchange="renderVozilaTbl()">
+        <option value="">Svi tipovi</option>
+        <option value="kamion">Kamioni</option>
+        <option value="bager">Bageri/Mašine</option>
+        <option value="malo">Mala vozila</option>
+      </select>
+      <select id="vfil-fir" onchange="renderVozilaTbl()"><option value="">Sve firme</option></select>
+      <span class="fil-count" id="vfil-count"></span>
+    </div>
+    <div class="tw" id="tbl-vozila"><div class="empty">Nema vozila</div></div>
+  </div>
+</div>
+
+<!-- ═══ TAB: POSTAVKE ═══ -->
+<div class="tab" id="tab-postavke">
+  <div class="card">
+    <div class="card-title">🏭 Vaša firma (za otpremnice)</div>
+    <div class="grid3">
+      <div class="fg"><label>Naziv</label><input id="mf-n" placeholder="PetrolTrans d.o.o."></div>
+      <div class="fg"><label>Adresa</label><input id="mf-a" placeholder="Ulica bb, Grad"></div>
+      <div class="fg"><label>ID / PDV broj</label><input id="mf-id" placeholder="4200000000000"></div>
+      <div class="fg"><label>Telefon</label><input id="mf-t" placeholder="033-000-000"></div>
+      <div class="fg"><label>Email</label><input id="mf-e" placeholder="info@firma.ba"></div>
+      <div class="fg"><label>Odgovorna osoba</label><input id="mf-o" placeholder="Ime Prezime, direktor"></div>
+    </div>
+    <button class="btn btn-p" onclick="sacuvajMF()">💾 Sačuvaj</button>
+  </div>
+  <div class="grid3" style="gap:14px">
+    <div class="card">
+      <div class="card-title">🛢️ Cistijerne</div>
+      <div class="fg"><label>Registracija</label><input id="nc-reg" placeholder="A00-C-001" oninput="this.value=this.value.toUpperCase()"></div>
+      <div class="fg"><label>Vozač cistijerne</label><input id="nc-voz" placeholder="Ime Prezime"></div>
+      <button class="btn btn-p" onclick="dodajC()">+ Dodaj</button>
+      <div style="margin-top:12px" id="lst-c"></div>
+    </div>
+    <div class="card">
+      <div class="card-title">🏢 Firme</div>
+      <div class="fg"><label>Naziv</label><input id="nf-n" placeholder="Gradnja d.o.o."></div>
+      <div class="fg"><label>Adresa / ID</label><input id="nf-a" placeholder="Ulica bb / 4200..."></div>
+      <button class="btn btn-p" onclick="dodajF()">+ Dodaj</button>
+      <div style="margin-top:12px" id="lst-f"></div>
+    </div>
+    <div class="card">
+      <div class="card-title">📍 Gradilišta</div>
+      <div class="fg"><label>Naziv</label><input id="ng-n" placeholder="Hotel Bosna — faza 2"></div>
+      <div class="fg"><label>Lokacija</label><input id="ng-l" placeholder="Bulevar bb, Ilidža"></div>
+      <button class="btn btn-p" onclick="dodajG()">+ Dodaj</button>
+      <div style="margin-top:12px" id="lst-g"></div>
+    </div>
+    <div class="card">
+      <div class="card-title">🏢 Treća lica (spoljne firme za fakturisanje)</div>
+      <div class="signal sig-tip">Ove firme se biraju na tabu "Treća lica" — njihova vozila se NE čuvaju trajno u bazi vozila.</div>
+      <div class="fg"><label>Naziv firme</label><input id="ntl-n" placeholder="npr. Bossil d.o.o."></div>
+      <button class="btn btn-p" onclick="dodajTL()">+ Dodaj</button>
+      <div style="margin-top:12px" id="lst-tl"></div>
+    </div>
+  </div>
+
+  <div class="card admin-only">
+    <div class="card-title">👤 Korisnici (prijave)</div>
+    <div class="signal sig-tip">Ovdje kreiraš nalog za svakog vozača (korisničko ime + lozinka). Vozač se prijavljuje na login ekranu sa tim podacima.</div>
+    <div class="grid2">
+      <div class="fg"><label>Korisničko ime *</label><input id="nu-user" placeholder="npr. mirko" autocapitalize="off"></div>
+      <div class="fg"><label>Lozinka *</label><input id="nu-pass" type="text" placeholder="min. 6 karaktera"></div>
+      <div class="fg"><label>Ime i prezime</label><input id="nu-ime" placeholder="Mirko Mirković"></div>
+      <div class="fg"><label>Uloga</label><select id="nu-role"><option value="vozac">🚛 Vozač</option><option value="admin">👔 Admin</option></select></div>
+    </div>
+    <button class="btn btn-p" onclick="kreirajKorisnika()">+ Kreiraj nalog</button>
+    <div style="margin-top:12px" id="lst-users"><div style="color:var(--mut2);font-size:12px;padding:8px">Učitavanje...</div></div>
+  </div>
+
+  <div class="card" style="border-color:rgba(240,74,74,.3)">
+    <div class="card-title" style="color:var(--red)">⚠️ Opasna zona</div>
+    <div class="signal sig-warn">Reset briše SVE podatke (otpremnice, vozila, firme, ulaze, transfere...) sa ovog uređaja, bez mogućnosti povrata. Koristi samo ako stvarno želiš da počneš iz početka.</div>
+    <button class="btn btn-r" onclick="openResetModal()">🗑 Resetuj cijeli sistem</button>
+  </div>
+</div>
+
+<!-- ═══ RESET MODAL ═══ -->
+<div class="modal" id="resetModal">
+  <div class="modal-box">
+    <div class="modal-head"><h3 style="color:var(--red)">⚠️ Potvrda resetovanja</h3><button class="btn btn-r" onclick="closeModal('resetModal')">✕</button></div>
+    <div class="modal-body">
+      <p style="font-size:13px;color:var(--mut2);margin-bottom:12px">Ovo će trajno obrisati SVE podatke sa ovog uređaja (vozila, firme, otpremnice, ulaze, transfere, treća lica). Ova radnja se NE MOŽE poništiti.</p>
+      <div class="fg full"><label>Da potvrdiš, upiši riječ <b>RESETUJ</b> ispod:</label><input id="reset-confirm-txt" placeholder="RESETUJ"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-r" id="reset-confirm-btn" onclick="izvrsiReset()">🗑 Da, obriši sve podatke</button>
+    </div>
+  </div>
+</div>
+
+</div><!-- /app -->
+
+<!-- ═══ ADD VEHICLE MODAL ═══ -->
+<div class="modal" id="scanModal">
+  <div class="modal-box">
+    <div class="modal-head"><h3>📷 Skeniraj QR kod vozila</h3><button class="btn btn-r" onclick="closeScanner()">✕</button></div>
+    <div class="modal-body">
+      <div id="qr-reader" style="width:100%"></div>
+      <div class="signal sig-tip" style="margin-top:10px">Usmjeri kameru na nalijepljeni QR kod na vozilu.</div>
+      <div id="qr-scan-err" style="color:#f66;font-size:12px;margin-top:6px"></div>
+    </div>
+  </div>
+</div>
+
+<div class="modal" id="korekcijaModal">
+  <div class="modal-box">
+    <div class="modal-head"><h3>⚖ Korekcija stanja cisterne</h3><button class="btn btn-r" onclick="closeModal('korekcijaModal')">✕</button></div>
+    <div class="modal-body">
+      <div class="signal sig-tip">Koristi kad se stvarno (izmjereno) stanje razlikuje od izračunatog. Unesi razliku — pozitivan broj dodaje, negativan oduzima.</div>
+      <div class="fg full"><label>Cisterna *</label><select id="kor-cist"><option value="">— odaberi —</option></select></div>
+      <div class="fg full"><label>Trenutno izračunato stanje</label><input id="kor-trenutno" readonly style="color:var(--acc3)"></div>
+      <div class="fg full"><label>Razlika (L) — može biti negativno *</label><input type="number" id="kor-razlika" step=".5" placeholder="npr. -120 ili 85"></div>
+      <div class="fg full"><label>Razlog korekcije *</label><input id="kor-razlog" placeholder="npr. mjerenje šipkom, ispravka greške unosa..."></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-p" onclick="saveKorekcija()">✓ Sačuvaj korekciju</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal" id="addGradModal">
+  <div class="modal-box">
+    <div class="modal-head"><h3>➕ Novo gradilište</h3><button class="btn btn-r" onclick="closeModal('addGradModal')">✕</button></div>
+    <div class="modal-body">
+      <div class="fg full"><label>Naziv *</label><input id="qg-naziv" placeholder="npr. Hotel Bosna — faza 2"></div>
+      <div class="fg full"><label>Lokacija (opciono)</label><input id="qg-lok" placeholder="Bulevar bb, Ilidža"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-p" onclick="saveGradilisteQuick()">✓ Sačuvaj</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal" id="addTLFirmaModal">
+  <div class="modal-box">
+    <div class="modal-head"><h3>➕ Nova firma (treće lice)</h3><button class="btn btn-r" onclick="closeModal('addTLFirmaModal')">✕</button></div>
+    <div class="modal-body">
+      <div class="fg full"><label>Naziv firme *</label><input id="qtl-naziv" placeholder="npr. Bossil d.o.o."></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-p" onclick="saveTLFirmaQuick()">✓ Sačuvaj</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal" id="addVehModal">
+  <div class="modal-box">
+    <div class="modal-head"><h3>+ Novo vozilo</h3><button class="btn btn-r" onclick="closeModal('addVehModal')">✕</button></div>
+    <div class="modal-body">
+      <div class="grid2">
+        <div class="fg"><label>Registracija *</label><input id="nv-reg" placeholder="A01-K-752" oninput="this.value=this.value.toUpperCase()"></div>
+        <div class="fg"><label>Tip vozila *</label>
+          <select id="nv-tip"><option value="kamion">🚛 Kamion</option><option value="bager">🏗️ Bager/Mašina</option><option value="malo">🚗 Malo vozilo</option></select>
+        </div>
+        <div class="fg"><label>Model</label><input id="nv-mod" placeholder="MAN TGS 18t"></div>
+        <div class="fg"><label>Firma *</label><select id="nv-fir"><option value="">— odaberi —</option></select></div>
+        <div class="fg full"><label>Ime i prezime vozača</label><input id="nv-voz" placeholder="Ime Prezime"></div>
+        <div class="fg full"><label>Napomena (opciono)</label><input id="nv-nap" placeholder="npr. novo vozilo, nije bilo u bazi"></div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-p" onclick="saveNewVehicle()">✓ Sačuvaj</button>
+      <button class="btn btn-s" onclick="closeModal('addVehModal')">Otkaži</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ SIGNATURE MODAL ═══ -->
+<div class="modal" id="sigModal">
+  <div class="modal-box">
+    <div class="modal-head"><h3>✍ Potpis vozača</h3><button class="btn btn-r" onclick="closeModal('sigModal')">✕</button></div>
+    <div class="modal-body">
+      <p id="sig-desc" style="font-size:12px;color:var(--mut2);margin-bottom:10px">Potpiši prstom ili mišem u polje ispod</p>
+      <canvas id="sigCanvas"></canvas>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-p" onclick="saveSig()">✓ Sačuvaj potpis</button>
+      <button class="btn btn-s" onclick="clearSig()">↺ Obriši</button>
+      <button class="btn btn-s" onclick="closeModal('sigModal')">Otkaži</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ PRINT MODAL ═══ -->
+<div class="modal" id="printModal">
+  <div class="modal-box" style="width:min(800px,98vw);max-height:97vh">
+    <div class="ptbar">
+      <span style="color:var(--mut2);font-size:12px;margin-right:auto" id="print-title">Otpremnica</span>
+      <button class="btn btn-pr" onclick="window.print()">🖨 Štampaj / PDF</button>
+      <button class="btn btn-s" style="padding:6px 13px;font-size:12px" onclick="closeModal('printModal')">✕</button>
+    </div>
+    <div id="print-body"></div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+// ═══════════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════════
+let S={
+  mojaFirma:{naziv:'',adresa:'',idBroj:'',tel:'',email:'',osoba:''},
+  firme:[],cistijerne:[],vozila:[],gradilista:[],
+  otpremnice:[],transferi:[],ulazi:[],
+  treceLiceFirme:[],       // predefinisana lista trećih lica (LKW/Bossil su "firme", ovo su spoljni kupci)
+  treceVozila:[],          // istorija ranije unesenih vozila/vozača za treća lica (autocomplete, ne trajna baza)
+  otpremnice3:[],          // otpremnice za točenje trećim licima - odvojeno od glavnih otpremnica
+  counter:100
+};
+
+let curOtp=null, curOtp3=null, curVehId='', sigs={entry:null,tr1:null,tr2:null,treca:null}, sigTarget=null;
+let importRows=[];
+let editingVehId=null;
+
+// Persist
+function save(){try{localStorage.setItem('GL4',JSON.stringify(S));}catch(e){}}
+function load(){
+  try{const d=localStorage.getItem('GL4');if(d&&d.length>10){S=JSON.parse(d);
+    // Dopuna nedostajućih polja ako su podaci sačuvani prije ove verzije
+    if(!S.treceLiceFirme)S.treceLiceFirme=[];
+    if(!S.treceVozila)S.treceVozila=[];
+    if(!S.otpremnice3)S.otpremnice3=[];
+    return;}}catch(e){}
+  initDemo();
+}
+
+function initDemo(){
+  S.mojaFirma={naziv:'PetrolTrans d.o.o.',adresa:'Hamdije Čemerlića 2, Sarajevo',idBroj:'4201234560001',tel:'033-123-456',email:'info@petroltrans.ba',osoba:'Adnan Hodžić, direktor'};
+  S.cistijerne=[{id:'c1',reg:'A00-C-001',vozac:'Senad Softić'},{id:'c2',reg:'A00-C-002',vozac:'Alen Bukić'}];
+  S.firme=[{id:'f1',naziv:'Gradnja Plus d.o.o.',adr:'Zmaja od Bosne 1, Sarajevo'},{id:'f2',naziv:'CestaCo d.d.',adr:'Maršala Tita 5, Mostar'},{id:'f3',naziv:'NiskogradnjaEx',adr:'Titova bb, Zenica'}];
+  S.gradilista=[{id:'g1',naziv:'Ponirak',lok:'Konjic — magistralni put'},{id:'g2',naziv:'Hotel Sarajevo',lok:'Ilidža, Hamdije Kreševljakovića 4'},{id:'g3',naziv:'Cesta M-17 dionica 3',lok:'Jablanica — Grabovica'}];
+  S.vozila=[
+    {id:'v1',reg:'A01-K-752',tip:'kamion',model:'MAN TGS 18t',firmaId:'f1',vozac:'Mirko Mirković'},
+    {id:'v2',reg:'A12-T-321',tip:'kamion',model:'Volvo FH 16',firmaId:'f1',vozac:'Edin Hadžić'},
+    {id:'v3',reg:'K09-J-456',tip:'kamion',model:'Scania R500',firmaId:'f2',vozac:'Senad Sejdić'},
+    {id:'v4',reg:'T77-A-001',tip:'kamion',model:'Mercedes Actros',firmaId:'f3',vozac:'Jovan Petrović'},
+    {id:'v5',reg:'BAG-001',tip:'bager',model:'Caterpillar 320D',firmaId:'f1',vozac:'Haris Muratović'},
+    {id:'v6',reg:'BAG-002',tip:'bager',model:'Komatsu PC210',firmaId:'f2',vozac:'Nedim Kovač'},
+    {id:'v7',reg:'A22-M-100',tip:'malo',model:'VW Transporter',firmaId:'f1',vozac:'Adin Lelo'},
+  ];
+  const td=today();
+  S.otpremnice=[{id:'o1',datum:td,brojOtp:'OTP-2026-101',cistijernId:'c1',gradId:'g1',gorivo:'Euro Dizel',
+    stavke:[
+      {id:'s1',kamionId:'v1',vozacIme:'Mirko Mirković',kmPocetak:125430,kmKraj:125620,motoSatiP:0,motoSatiK:0,litara:350,sig:null},
+      {id:'s2',kamionId:'v3',vozacIme:'Senad Sejdić',kmPocetak:88200,kmKraj:88340,motoSatiP:0,motoSatiK:0,litara:420,sig:null},
+      {id:'s3',kamionId:'v5',vozacIme:'Haris Muratović',kmPocetak:0,kmKraj:0,motoSatiP:4820,motoSatiK:4835,litara:180,sig:null},
+    ]}];
+  S.ulazi=[{id:'u1',datum:td+'T06:00',cistijernId:'c1',dobav:'Petrol d.o.o.',brDob:'DOB-2026-0881',gorivo:'Euro Dizel',litara:5000,nap:''}];
+  S.counter=102;
+  save();
+}
+
+// Helpers
+function uid(){return Math.random().toString(36).substr(2,8);}
+function today(){return new Date().toISOString().split('T')[0];}
+function nowDT(){return new Date().toISOString().slice(0,16);}
+function gV(id){return S.vozila.find(v=>v.id===id);}
+
+// ═══ STANJE CISTERNE (spriječava sipanje "u minus") ═══
+function cisternaStanje(cid){
+  const ulaz=S.ulazi.filter(u=>u.cistijernId===cid).reduce((a,u)=>a+u.litara,0);
+  const izdatoOtp=S.otpremnice.filter(o=>o.cistijernId===cid).reduce((a,o)=>a+o.stavke.reduce((x,s)=>x+s.litara,0),0);
+  const izdatoOtp3=S.otpremnice3.filter(o=>o.cistijernId===cid).reduce((a,o)=>a+o.stavke.reduce((x,s)=>x+s.litara,0),0);
+  const transferOut=S.transferi.filter(t=>t.cistijernDajeId===cid).reduce((a,t)=>a+t.litara,0);
+  const transferIn=S.transferi.filter(t=>t.cistijernPrimaId===cid).reduce((a,t)=>a+t.litara,0);
+  return ulaz-izdatoOtp-izdatoOtp3-transferOut+transferIn;
+}
+
+// Uzima u obzir i stavke koje su već dodane u TRENUTNO otvorenoj otpremnici/treća lica (još nisu snimljene)
+function raspolozivoLitara(cid){
+  let vec=0;
+  if(curOtp&&curOtp.cistijernId===cid) vec+=curOtp.stavke.reduce((a,s)=>a+s.litara,0);
+  if(curOtp3&&curOtp3.cistijernId===cid) vec+=curOtp3.stavke.reduce((a,s)=>a+s.litara,0);
+  return cisternaStanje(cid)-vec;
+}
+function gF(id){return S.firme.find(f=>f.id===id);}
+function gC(id){return S.cistijerne.find(c=>c.id===id);}
+function gG(id){return S.gradilista.find(g=>g.id===id);}
+function tipL(t){return{kamion:'🚛 Kamion',bager:'🏗️ Bager',malo:'🚗 Malo'}[t]||t;}
+function tipTag(t){return{kamion:'t-k',bager:'t-b',malo:'t-m'}[t]||'t-k';}
+function toast(msg,dur=2500){const el=document.getElementById('toast');el.textContent=msg;el.classList.add('show');setTimeout(()=>el.classList.remove('show'),dur);}
+function openModal(id){document.getElementById(id).classList.add('open');}
+function closeModal(id){document.getElementById(id).classList.remove('open');}
+
+// Uloga se postavlja JEDNOM nakon prijave (na osnovu Firestore users/{uid}.role), ne ručno preko dugmadi
+function applyRole(role){
+  const isAdmin=role==='admin';
+  document.body.classList.toggle('driver-mode',!isAdmin);
+  if(isAdmin){
+    document.getElementById('vozac-mode').style.display='none';
+    document.getElementById('vozac-back').style.display='none';
+    document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+    document.getElementById('tab-tocenje').classList.add('active');
+    document.querySelectorAll('.nav-btn').forEach(b=>b.classList.remove('active'));
+    document.querySelector('.nav-btn').classList.add('active');
+  }else{
+    document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+    document.getElementById('vozac-mode').style.display='block';
+    document.getElementById('vozac-back').style.display='none';
+  }
+}
+function vozacGoTo(tab){
+  document.getElementById('vozac-mode').style.display='none';
+  document.getElementById('vozac-back').style.display='block';
+  showTab(tab,null);
+}
+function vozacBackToMenu(){
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  document.getElementById('vozac-back').style.display='none';
+  document.getElementById('vozac-mode').style.display='block';
+}
+
+// Tab nav
+function showTab(name,btn){
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  document.querySelectorAll('.nav-btn').forEach(b=>b.classList.remove('active'));
+  document.getElementById('tab-'+name).classList.add('active');
+  if(btn) btn.classList.add('active');
+  const r={pregled:renderPregled,arhiva:()=>{},razduzenje:()=>{},izvjestaj:renderIzv,postavke:initPost,vozila:()=>{renderVozilaTbl();populateAll();},treca:()=>{populateAll();populateTrecaFirme();renderTlLista();}};
+  if(r[name]) r[name]();
+}
+
+// Populate selects
+function populateAll(){
+  ['otp-cist','tr-daje','tr-prima','ul-cist','fil-cist','tl-cist'].forEach(id=>{
+    const el=document.getElementById(id);if(!el)return;
+    const fv=el.options[0].outerHTML; el.innerHTML=fv;
+    S.cistijerne.forEach(c=>{const st=cisternaStanje(c.id);el.innerHTML+=`<option value="${c.id}">${c.reg} — ${c.vozac||''} (${st.toFixed(0)} L)</option>`;});
+  });
+  ['otp-grad','fil-grad'].forEach(id=>{
+    const el=document.getElementById(id);if(!el)return;
+    const fv=el.options[0].outerHTML; el.innerHTML=fv;
+    S.gradilista.forEach(g=>{el.innerHTML+=`<option value="${g.id}">${g.naziv}</option>`;});
+  });
+  ['nv-fir','vfil-fir'].forEach(id=>{
+    const el=document.getElementById(id);if(!el)return;
+    const first=el.options[0].outerHTML; el.innerHTML=first;
+    S.firme.forEach(f=>{el.innerHTML+=`<option value="${f.id}">${f.naziv}</option>`;});
+  });
+}
+
+// ═══ TOČENJE ═══
+async function startOtp(){
+  const cid=document.getElementById('otp-cist').value;
+  const gid=document.getElementById('otp-grad').value;
+  if(!cid||!gid){toast('⚠ Odaberi cistijerni i gradilište!');return;}
+  let brManual=document.getElementById('otp-broj').value.trim();
+  let br=brManual;
+  if(!br){
+    try{ const counter=await window.FB.nextCounter(); br='OTP-'+new Date().getFullYear()+'-'+counter; }
+    catch(e){ toast('⚠ Greška pri dodjeli broja: '+e.message); return; }
+  }
+  const c=gC(cid),g=gG(gid);
+  curOtp={id:null,datum:document.getElementById('otp-dat').value,brojOtp:br,cistijernId:cid,gradId:gid,gorivo:document.getElementById('otp-gor').value,stavke:[]};
+  document.getElementById('otp-hdr').style.display='none';
+  document.getElementById('otp-active').style.display='block';
+  document.getElementById('otp-bar').textContent=`📋 ${br}  ·  🛢️ ${c.reg}  ·  📍 ${g.naziv}  ·  📅 ${curOtp.datum}`;
+  renderStavke();
+}
+
+function searchVeh(q){
+  const drop=document.getElementById('veh-drop');
+  if(!q||q.length<1){drop.classList.remove('open');return;}
+  const res=S.vozila.filter(v=>v.reg.toLowerCase().includes(q.toLowerCase())||(v.vozac||'').toLowerCase().includes(q.toLowerCase())||(v.model||'').toLowerCase().includes(q.toLowerCase())).slice(0,10);
+  let html=res.map(v=>{const f=gF(v.firmaId);return`<div class="vdrop-item" onclick="selectVeh('${v.id}')"><div class="vdrop-reg">${v.reg} <span class="tag ${tipTag(v.tip)}" style="font-size:10px">${tipL(v.tip)}</span></div><div class="vdrop-sub">${v.model||''} · ${f?f.naziv:'?'} · ${v.vozac||'—'}</div></div>`;}).join('');
+  html+=`<div class="vdrop-item" style="border-top:2px solid rgba(255,255,255,.1);color:var(--acc)" onclick="quickAddVeh('${q.replace(/'/g,"\\'")}')">➕ Vozilo nije u bazi — dodaj "${q}"</div>`;
+  drop.innerHTML=html;
+  drop.classList.add('open');
+}
+
+function quickAddVeh(prefillReg){
+  document.getElementById('veh-drop').classList.remove('open');
+  openModal('addVehModal');
+  document.getElementById('nv-reg').value=prefillReg||'';
+  document.getElementById('nv-mod').value='';
+  document.getElementById('nv-voz').value='';
+  document.getElementById('nv-nap')&&(document.getElementById('nv-nap').value='');
+  // Označi da nakon snimanja treba odmah izabrati ovo vozilo za trenutni unos
+  window._quickAddForEntry=true;
+}
+
+// ═══ SKENIRANJE QR KODA KAMEROM ═══
+let qrScanner=null;
+
+function openScanner(){
+  document.getElementById('scanModal').classList.add('open');
+  document.getElementById('qr-scan-err').textContent='';
+  if(typeof Html5Qrcode==='undefined'){
+    document.getElementById('qr-scan-err').textContent='⚠ Skener se još učitava, pokušaj ponovo za par sekundi (potrebna internet konekcija).';
+    return;
+  }
+  qrScanner=new Html5Qrcode('qr-reader');
+  qrScanner.start(
+    {facingMode:'environment'},         // zadnja kamera na telefonu
+    {fps:10, qrbox:{width:230,height:230}},
+    onScanSuccess,
+    ()=>{} // ignorišemo greške dok skenira svaki frejm
+  ).catch(err=>{
+    document.getElementById('qr-scan-err').textContent='⚠ Ne mogu pristupiti kameri. Provjeri dozvole za kameru u browseru. ('+err+')';
+  });
+}
+
+function closeScanner(){
+  document.getElementById('scanModal').classList.remove('open');
+  if(qrScanner){
+    qrScanner.stop().then(()=>qrScanner.clear()).catch(()=>{});
+    qrScanner=null;
+  }
+}
+
+function onScanSuccess(decodedText){
+  let data;
+  try{ data=JSON.parse(decodedText); }
+  catch(e){ document.getElementById('qr-scan-err').textContent='⚠ Nepoznat QR kod (nije vozilo iz GorivoLog-a).'; return; }
+
+  if(!data||!data.id||!gV(data.id)){
+    document.getElementById('qr-scan-err').textContent='⚠ Vozilo nije pronađeno u bazi.';
+    return;
+  }
+  closeScanner();
+  selectVeh(data.id);
+  toast('✓ Vozilo učitano skeniranjem: '+data.reg);
+}
+
+function selectVeh(id){
+  const v=gV(id);if(!v)return;
+  const f=gF(v.firmaId);
+  curVehId=id;
+  document.getElementById('veh-q').value=v.reg;
+  document.getElementById('veh-drop').classList.remove('open');
+  document.getElementById('e-reg').value=v.reg;
+  document.getElementById('e-tip').value=tipL(v.tip);
+  document.getElementById('e-voz').value=v.vozac||'';
+  document.getElementById('e-fir').value=f?f.naziv:'?';
+  const isB=v.tip==='bager';
+  ['kmP-g','kmK-g'].forEach(id=>document.getElementById(id).style.display=isB?'none':'');
+  ['msP-g','msK-g'].forEach(id=>document.getElementById(id).style.display=isB?'':'none');
+  document.getElementById('entry-form').style.display='block';
+  document.getElementById('e-lit').focus();
+  sigs.entry=null;
+  document.getElementById('e-sig-p').innerHTML='<span style="color:var(--mut2);font-size:12px">👆 Dodirni za potpis</span>';
+}
+
+function addStavka(){
+  const v=gV(curVehId);
+  if(!v){toast('⚠ Odaberi vozilo!');return;}
+  const lit=parseFloat(document.getElementById('e-lit').value);
+  if(!lit||lit<=0){toast('⚠ Unesite litre!');return;}
+  const dost=raspolozivoLitara(curOtp.cistijernId);
+  if(lit>dost){toast(`⚠ Nema dovoljno goriva u cisterni! Raspoloživo: ${dost.toFixed(1)} L, traženo: ${lit} L`,4000);return;}
+  const isB=v.tip==='bager';
+  curOtp.stavke.push({
+    id:'s'+uid(), kamionId:curVehId,
+    vozacIme:document.getElementById('e-voz').value.trim(),
+    kmPocetak:isB?0:parseFloat(document.getElementById('e-kmp').value)||0,
+    kmKraj:isB?0:parseFloat(document.getElementById('e-kmk').value)||0,
+    motoSatiP:isB?parseFloat(document.getElementById('e-msp').value)||0:0,
+    motoSatiK:isB?parseFloat(document.getElementById('e-msk').value)||0:0,
+    litara:lit, sig:sigs.entry||null
+  });
+  renderStavke();
+  // reset
+  document.getElementById('veh-q').value='';
+  document.getElementById('entry-form').style.display='none';
+  ['e-kmp','e-kmk','e-msp','e-msk','e-lit'].forEach(id=>document.getElementById(id).value='');
+  sigs.entry=null; curVehId='';
+  toast('✓ Dodano');
+}
+function cancelEntry(){document.getElementById('entry-form').style.display='none';document.getElementById('veh-q').value='';curVehId='';}
+function removeStavka(sid){curOtp.stavke=curOtp.stavke.filter(s=>s.id!==sid);renderStavke();}
+
+function renderStavke(){
+  const el=document.getElementById('stavke-list');
+  const tot=document.getElementById('otp-ukup');
+  if(!curOtp||!curOtp.stavke.length){el.innerHTML='<div class="empty">Još nema vozila</div>';tot.textContent='';return;}
+  const uk=curOtp.stavke.reduce((a,s)=>a+s.litara,0);
+  tot.textContent='Ukupno: '+uk+' L';
+  el.innerHTML=curOtp.stavke.map((s,i)=>{
+    const v=gV(s.kamionId),f=v?gF(v.firmaId):null;
+    const isB=v&&v.tip==='bager';
+    const mj=isB?`${s.motoSatiP}→${s.motoSatiK} mh (${+(s.motoSatiK-s.motoSatiP).toFixed(1)} mh)`:`${s.kmPocetak}→${s.kmKraj} km (${s.kmKraj-s.kmPocetak} km)`;
+    return`<div class="stavka"><div class="stavka-head">
+      <div><span style="font-size:11px;color:var(--mut2)">R.br. ${i+1}</span>
+        <span class="stavka-reg" style="margin-left:8px">${v?v.reg:'?'}</span>
+        <span class="tag t-l" style="margin-left:6px">${s.litara} L</span>
+        ${f?`<span class="tag t-f" style="margin-left:4px">${f.naziv}</span>`:''}
+      </div>
+      <button class="btn btn-r" onclick="removeStavka('${s.id}')">✕</button>
+    </div>
+    <div style="font-size:12px;color:var(--mut2);display:flex;flex-wrap:wrap;gap:10px">
+      <span>👤 ${s.vozacIme||'—'}</span>
+      <span class="tag t-b" style="font-size:11px">${mj}</span>
+      <span>${s.sig?'✅ Potpisano':'⚠️ Bez potpisa'}</span>
+    </div></div>`;
+  }).join('');
+}
+
+async function zatvoriOtp(){
+  if(!curOtp||!curOtp.stavke.length){toast('⚠ Nema stavki!');return;}
+  try{
+    const {id, ...podaci}=curOtp;
+    const ref=await window.FB.addDoc(window.FB.col('otpremnice'),podaci);
+    const saved={id:ref.id,...podaci};
+    S.otpremnice.push(saved);
+    resetOtpForm();
+    renderDanas();
+    printOtp(saved.id, saved);
+    toast('✓ Otpremnica sačuvana!');
+  }catch(e){toast('⚠ Greška: '+e.message);}
+}
+function odustaniOtp(){if(!confirm('Odustati?'))return;resetOtpForm();}
+function resetOtpForm(){
+  curOtp=null;curVehId='';
+  document.getElementById('otp-hdr').style.display='block';
+  document.getElementById('otp-active').style.display='none';
+  document.getElementById('otp-broj').value='';
+  document.getElementById('entry-form').style.display='none';
+}
+
+function renderDanas(){
+  const d=today();
+  const list=S.otpremnice.filter(o=>o.datum===d).reverse();
+  const el=document.getElementById('danas-list');
+  if(!list.length){el.innerHTML='<div class="empty">Nema unosa za danas</div>';return;}
+  el.innerHTML=list.map(o=>{
+    const c=gC(o.cistijernId),g=gG(o.gradId),uk=o.stavke.reduce((a,s)=>a+s.litara,0);
+    return`<div style="display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid var(--bord)">
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <span style="font-size:11px;color:var(--mut2);font-family:monospace">${o.brojOtp}</span>
+        <span class="tag t-l">${uk} L</span>
+        <span class="tag t-f">${c?c.reg:'?'}</span>
+        <span class="tag t-g">${g?g.naziv:'?'}</span>
+        <span style="font-size:12px;color:var(--mut2)">${o.stavke.length} voz.</span>
+      </div>
+      <button class="btn btn-pr" onclick="printOtp('${o.id}')">🖨 Print</button>
+    </div>`;
+  }).join('');
+}
+
+// ═══ TREĆA LICA ═══
+function populateTrecaFirme(){
+  const el=document.getElementById('tl-fir');if(!el)return;
+  const cur=el.value;
+  el.innerHTML='<option value="">— odaberi —</option>'+S.treceLiceFirme.map(f=>`<option value="${f.id}">${f.naziv}</option>`).join('');
+  el.value=cur;
+}
+
+function addNewGradiliste(){
+  document.getElementById('qg-naziv').value='';
+  document.getElementById('qg-lok').value='';
+  openModal('addGradModal');
+}
+
+async function saveGradilisteQuick(){
+  const naziv=document.getElementById('qg-naziv').value.trim();
+  if(!naziv){toast('⚠ Unesite naziv gradilišta!');return;}
+  try{
+    const podaci={naziv,lok:document.getElementById('qg-lok').value.trim()};
+    const ref=await window.FB.addDoc(window.FB.col('gradilista'),podaci);
+    S.gradilista.push({id:ref.id,...podaci});
+    populateAll();
+    document.getElementById('otp-grad').value=ref.id;
+    closeModal('addGradModal');
+    toast('✓ Gradilište dodano!');
+  }catch(e){toast('⚠ Greška: '+e.message);}
+}
+
+function addNewTrecaFirma(){
+  document.getElementById('qtl-naziv').value='';
+  openModal('addTLFirmaModal');
+}
+
+async function saveTLFirmaQuick(){
+  const naziv=document.getElementById('qtl-naziv').value.trim();
+  if(!naziv){toast('⚠ Unesite naziv firme!');return;}
+  try{
+    const ref=await window.FB.addDoc(window.FB.col('treceLiceFirme'),{naziv});
+    S.treceLiceFirme.push({id:ref.id,naziv});
+    populateTrecaFirme();
+    document.getElementById('tl-fir').value=ref.id;
+    closeModal('addTLFirmaModal');
+    toast('✓ Firma dodana — sad je u listi za sljedeći put');
+  }catch(e){toast('⚠ Greška: '+e.message);}
+}
+
+function refreshTrecaDatalists(){
+  const regs=[...new Set(S.treceVozila.map(v=>v.reg))];
+  const vozaci=[...new Set(S.treceVozila.map(v=>v.vozac).filter(Boolean))];
+  document.getElementById('tl-reg-list').innerHTML=regs.map(r=>`<option value="${r}">`).join('');
+  document.getElementById('tl-voz-list').innerHTML=vozaci.map(v=>`<option value="${v}">`).join('');
+}
+
+async function startOtp3(){
+  const cid=document.getElementById('tl-cist').value;
+  const fid=document.getElementById('tl-fir').value;
+  if(!cid||!fid){toast('⚠ Odaberi cisternu i firmu!');return;}
+  let br=document.getElementById('tl-broj').value.trim();
+  if(!br){
+    try{ const counter=await window.FB.nextCounter(); br='OTP3-'+new Date().getFullYear()+'-'+counter; }
+    catch(e){ toast('⚠ Greška pri dodjeli broja: '+e.message); return; }
+  }
+  const c=gC(cid),f=S.treceLiceFirme.find(x=>x.id===fid);
+  curOtp3={id:null,datum:document.getElementById('tl-dat').value,brojOtp:br,cistijernId:cid,treceLiceId:fid,gorivo:document.getElementById('tl-gor').value,stavke:[]};
+  document.getElementById('tl-hdr').style.display='none';
+  document.getElementById('tl-active').style.display='block';
+  document.getElementById('tl-bar').textContent=`📋 ${br}  ·  🛢️ ${c.reg}  ·  🏢 ${f.naziv}  ·  📅 ${curOtp3.datum}`;
+  refreshTrecaDatalists();
+  renderStavke3();
+}
+
+function addStavka3(){
+  const reg=document.getElementById('tl-reg').value.trim().toUpperCase();
+  const vozac=document.getElementById('tl-voz').value.trim();
+  const nap=document.getElementById('tl-nap').value.trim();
+  const lit=parseFloat(document.getElementById('tl-lit').value);
+  if(!reg){toast('⚠ Unesi registraciju vozila!');return;}
+  if(!lit||lit<=0){toast('⚠ Unesite litre!');return;}
+  const dost=raspolozivoLitara(curOtp3.cistijernId);
+  if(lit>dost){toast(`⚠ Nema dovoljno goriva u cisterni! Raspoloživo: ${dost.toFixed(1)} L, traženo: ${lit} L`,4000);return;}
+  curOtp3.stavke.push({id:'s'+uid(),reg,vozac,napomena:nap,litara:lit,sig:sigs.treca||null});
+  // Zapamti kombinaciju za sljedeći put (autocomplete), bez dupliranja
+  if(!S.treceVozila.find(v=>v.reg===reg&&v.vozac===vozac)){
+    window.FB.addDoc(window.FB.col('treceVozila'),{reg,vozac}).catch(()=>{});
+    S.treceVozila.push({reg,vozac});
+  }
+  renderStavke3();
+  ['tl-reg','tl-voz','tl-nap','tl-lit'].forEach(id=>document.getElementById(id).value='');
+  sigs.treca=null;
+  document.getElementById('tl-sig-p').innerHTML='<span id="tl-sig-lbl" style="color:var(--mut2);font-size:12px">👆 Dodirni za potpis</span>';
+  toast('✓ Dodano');
+}
+
+function removeStavka3(sid){curOtp3.stavke=curOtp3.stavke.filter(s=>s.id!==sid);renderStavke3();}
+
+function renderStavke3(){
+  const el=document.getElementById('tl-stavke-list');
+  const tot=document.getElementById('tl-ukup');
+  if(!curOtp3||!curOtp3.stavke.length){el.innerHTML='<div class="empty">Još nema stavki</div>';tot.textContent='';return;}
+  const uk=curOtp3.stavke.reduce((a,s)=>a+s.litara,0);
+  tot.textContent='Ukupno: '+uk+' L';
+  el.innerHTML=curOtp3.stavke.map((s,i)=>`<div class="stavka"><div class="stavka-head">
+      <div><span style="font-size:11px;color:var(--mut2)">R.br. ${i+1}</span>
+        <span class="stavka-reg" style="margin-left:8px">${s.reg}</span>
+        <span class="tag t-l" style="margin-left:6px">${s.litara} L</span>
+      </div>
+      <button class="btn btn-r" onclick="removeStavka3('${s.id}')">✕</button>
+    </div>
+    <div style="font-size:12px;color:var(--mut2);display:flex;flex-wrap:wrap;gap:10px">
+      <span>👤 ${s.vozac||'—'}</span>
+      ${s.napomena?`<span class="tag t-b" style="font-size:11px">${s.napomena}</span>`:''}
+      <span>${s.sig?'✅ Potpisano':'⚠️ Bez potpisa'}</span>
+    </div></div>`).join('');
+}
+
+async function zatvoriTreca(){
+  if(!curOtp3||!curOtp3.stavke.length){toast('⚠ Nema stavki!');return;}
+  try{
+    const {id, ...podaci}=curOtp3;
+    const ref=await window.FB.addDoc(window.FB.col('otpremnice3'),podaci);
+    const saved={id:ref.id,...podaci};
+    S.otpremnice3.push(saved);
+    resetTreca3Form();
+    renderTlLista();
+    printTreca(saved.id,saved);
+    toast('✓ Otpremnica (treća lica) sačuvana!');
+  }catch(e){toast('⚠ Greška: '+e.message);}
+}
+function odustaniTreca(){if(!confirm('Odustati?'))return;resetTreca3Form();}
+function resetTreca3Form(){
+  curOtp3=null;
+  document.getElementById('tl-hdr').style.display='block';
+  document.getElementById('tl-active').style.display='none';
+  document.getElementById('tl-broj').value='';
+}
+
+function renderTlLista(){
+  const el=document.getElementById('tl-lista');if(!el)return;
+  const list=[...S.otpremnice3].reverse();
+  if(!list.length){el.innerHTML='<div class="empty">Nema unosa</div>';return;}
+  el.innerHTML=list.map(o=>{
+    const c=gC(o.cistijernId),f=S.treceLiceFirme.find(x=>x.id===o.treceLiceId),uk=o.stavke.reduce((a,s)=>a+s.litara,0);
+    return`<div style="display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid var(--bord)">
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <span style="font-size:11px;color:var(--mut2);font-family:monospace">${o.brojOtp}</span>
+        <span class="tag t-l">${uk} L</span>
+        <span class="tag t-f">${c?c.reg:'?'}</span>
+        <span class="tag t-g">${f?f.naziv:'?'}</span>
+        <span style="font-size:12px;color:var(--mut2)">${o.stavke.length} voz.</span>
+      </div>
+      <button class="btn btn-pr" onclick="printTreca('${o.id}')">🖨 Print</button>
+    </div>`;
+  }).join('');
+}
+
+function printTreca(id,obj){
+  const o=obj||S.otpremnice3.find(x=>x.id===id);if(!o)return;
+  const c=gC(o.cistijernId),f=S.treceLiceFirme.find(x=>x.id===o.treceLiceId),mf=S.mojaFirma;
+  const ukL=o.stavke.reduce((a,s)=>a+s.litara,0);
+  const rows=o.stavke.map((s,i)=>`<tr>
+      <td>${i+1}</td>
+      <td>${s.vozac||'—'}</td>
+      <td style="font-family:monospace;font-weight:700">${s.reg}</td>
+      <td style="font-size:9px;color:#666">${s.napomena||''}</td>
+      <td style="font-family:monospace;font-weight:700;text-align:right">${s.litara}</td>
+      <td style="text-align:center">${s.sig?`<img src="${s.sig}" style="height:30px;width:auto">`:'<span style="font-size:9px;color:#ccc">—</span>'}</td>
+    </tr>`).join('');
+  document.getElementById('print-title').textContent=`Otpremnica (treća lica) ${o.brojOtp}`;
+  document.getElementById('print-body').innerHTML=`<div class="otp">
+    <div class="otp-top">
+      <div class="otp-co"><strong>${mf.naziv||'[Vaša firma]'}</strong>${mf.adresa||''}<br>${mf.idBroj?'ID: '+mf.idBroj:''} ${mf.tel?'| Tel: '+mf.tel:''}<br>${mf.email||''}</div>
+      <div><div class="otp-ttl">OTPREMNICA — TREĆE LICE</div><div style="font-family:monospace;font-size:12px;text-align:right">Br: <b>${o.brojOtp}</b></div><div style="font-size:10px;color:#666;text-align:right">${o.datum}</div></div>
+    </div>
+    <div class="otp-meta">
+      <div class="otp-mb"><div class="otp-ml">Cisterna</div><div class="otp-mv">${c?c.reg:'—'}</div><div class="otp-ms">Vozač: ${c?c.vozac:'—'}</div></div>
+      <div class="otp-mb"><div class="otp-ml">Firma (primalac)</div><div class="otp-mv">${f?f.naziv:'—'}</div></div>
+      <div class="otp-mb"><div class="otp-ml">Gorivo</div><div class="otp-mv">${o.gorivo}</div></div>
+      <div class="otp-mb"><div class="otp-ml">Datum</div><div class="otp-mv">${o.datum}</div><div class="otp-ms">${o.stavke.length} stavki</div></div>
+    </div>
+    <table><thead><tr><th>R.br.</th><th>Ime i prezime vozača</th><th>Registracija</th><th>Napomena</th><th style="text-align:right">Litara</th><th>Potpis</th></tr></thead>
+    <tbody>${rows}<tr style="background:#f0f0f0;font-weight:700"><td colspan="4" style="text-align:right;font-size:10px">UKUPNO:</td><td style="font-family:monospace;font-size:13px;text-align:right">${ukL} L</td><td></td></tr></tbody></table>
+    <div class="otp-sigs">
+      <div class="otp-sig"><div class="otp-sig-lbl">Vozač cistijerne</div><div class="otp-sig-line"></div><div class="otp-sig-nm">${c?c.vozac:''}</div></div>
+      <div class="otp-sig"><div class="otp-sig-lbl">Odgovorna osoba</div><div class="otp-sig-line"></div><div class="otp-sig-nm">${mf.osoba||''}</div></div>
+      <div class="otp-sig"><div class="otp-sig-lbl">Pečat i datum</div><div class="otp-sig-line"></div></div>
+    </div>
+    <div class="otp-foot"><span>${mf.naziv||''} | ${mf.adresa||''}</span><span>${o.brojOtp} | ${o.datum} | GorivoLog v4</span></div>
+  </div>`;
+  openModal('printModal');
+}
+
+// ═══ TRANSFER ═══
+async function spremiTr(){
+  const daje=document.getElementById('tr-daje').value,prima=document.getElementById('tr-prima').value;
+  const lit=parseFloat(document.getElementById('tr-lit').value);
+  if(!daje||!prima||!lit){toast('⚠ Popuni sva polja!');return;}
+  if(daje===prima){toast('⚠ Ista cisterna!');return;}
+  const dost=raspolozivoLitara(daje);
+  if(lit>dost){toast(`⚠ Cisterna koja daje nema dovoljno goriva! Raspoloživo: ${dost.toFixed(1)} L, traženo: ${lit} L`,4000);return;}
+  const podaci={datum:document.getElementById('tr-dat').value||nowDT(),cistijernDajeId:daje,cistijernPrimaId:prima,gorivo:document.getElementById('tr-gor').value,litara:lit,lokacija:document.getElementById('tr-lok').value.trim(),sig1:sigs.tr1,sig2:sigs.tr2};
+  try{
+    const ref=await window.FB.addDoc(window.FB.col('transferi'),podaci);
+    S.transferi.push({id:ref.id,...podaci});
+    sigs.tr1=sigs.tr2=null;
+    document.getElementById('tr-lit').value='';document.getElementById('tr-lok').value='';
+    ['tr-s1-p','tr-s2-p'].forEach(id=>{document.getElementById(id).innerHTML='<span style="color:var(--mut2);font-size:12px">👆 Potpis</span>';});
+    renderTr();populateAll();toast('✓ Transfer sačuvan!');
+  }catch(e){toast('⚠ Greška: '+e.message);}
+}
+function renderTr(){
+  const el=document.getElementById('lst-tr');
+  if(!S.transferi.length){el.innerHTML='<div class="empty">Nema transfera</div>';return;}
+  el.innerHTML='<div class="tw"><table><thead><tr><th>Datum</th><th>Daje</th><th>Prima</th><th>Litara</th><th>Lokacija</th></tr></thead><tbody>'+
+    [...S.transferi].reverse().map(t=>{
+      const cd=gC(t.cistijernDajeId),cp=gC(t.cistijernPrimaId);
+      return`<tr><td class="mono">${(t.datum||'').replace('T',' ')}</td><td><span class="tag t-warn">${cd?cd.reg:'?'}</span></td><td><span class="tag t-ok">${cp?cp.reg:'?'}</span></td><td><span class="tag t-l">${t.litara}L</span></td><td style="font-size:12px;color:var(--mut2)">${t.lokacija||'—'}</td></tr>`;
+    }).join('')+'</tbody></table></div>';
+}
+
+// ═══ ULAZ ═══
+let editingUlId=null;
+async function spremiUl(){
+  const cid=document.getElementById('ul-cist').value,lit=parseFloat(document.getElementById('ul-lit').value);
+  if(!cid||!lit){toast('⚠ Popuni sva polja!');return;}
+  const podaci={datum:document.getElementById('ul-dat').value||nowDT(),cistijernId:cid,dobav:document.getElementById('ul-dob').value.trim(),brDob:document.getElementById('ul-brdob').value.trim(),gorivo:document.getElementById('ul-gor').value,litara:lit,nap:document.getElementById('ul-nap').value.trim()};
+  try{
+    if(editingUlId){
+      await window.FB.setDoc(window.FB.docRef('ulazi',editingUlId),podaci,{merge:true});
+      const idx=S.ulazi.findIndex(u=>u.id===editingUlId);
+      if(idx>=0) S.ulazi[idx]={...S.ulazi[idx],...podaci};
+      editingUlId=null;
+      document.getElementById('ul-btn').textContent='✓ Sačuvaj ulaz';
+      toast('✓ Ulaz ažuriran!');
+    }else{
+      const ref=await window.FB.addDoc(window.FB.col('ulazi'),podaci);
+      S.ulazi.push({id:ref.id,...podaci});
+      toast('✓ Ulaz sačuvan!');
+    }
+    document.getElementById('ul-lit').value='';document.getElementById('ul-dob').value='';document.getElementById('ul-brdob').value='';document.getElementById('ul-nap').value='';
+    renderUl();populateAll();
+  }catch(e){toast('⚠ Greška: '+e.message);}
+}
+function editUl(id){
+  const u=S.ulazi.find(x=>x.id===id);if(!u)return;
+  editingUlId=id;
+  document.getElementById('ul-dat').value=u.datum;
+  document.getElementById('ul-cist').value=u.cistijernId;
+  document.getElementById('ul-dob').value=u.dobav||'';
+  document.getElementById('ul-brdob').value=u.brDob||'';
+  document.getElementById('ul-gor').value=u.gorivo;
+  document.getElementById('ul-lit').value=u.litara;
+  document.getElementById('ul-nap').value=u.nap||'';
+  document.getElementById('ul-btn').textContent='✓ Ažuriraj ulaz';
+  window.scrollTo({top:0,behavior:'smooth'});
+}
+async function deleteUl(id){
+  try{
+    await window.FB.deleteDoc(window.FB.docRef('ulazi',id));
+    S.ulazi=S.ulazi.filter(u=>u.id!==id);
+    renderUl();populateAll();
+    toast('✓ Ulaz obrisan');
+  }catch(e){toast('⚠ Greška: '+e.message);}
+}
+function renderUl(){
+  const el=document.getElementById('lst-ul');
+  if(!S.ulazi.length){el.innerHTML='<div class="empty">Nema unosa</div>';return;}
+  el.innerHTML='<div class="tw"><table><thead><tr><th>Datum</th><th>Cisterna</th><th>Dobavljač</th><th>Litara</th><th>Br. otpremnice</th><th></th></tr></thead><tbody>'+
+    [...S.ulazi].reverse().map(u=>{const c=gC(u.cistijernId);const isKor=u.dobav==='KOREKCIJA';return`<tr><td class="mono">${(u.datum||'').replace('T',' ')}</td><td><span class="tag t-ok">${c?c.reg:'?'}</span></td><td>${isKor?`<span class="tag t-warn">⚖ ${u.nap||'korekcija'}</span>`:(u.dobav||'—')}</td><td><span class="tag t-l">${u.litara>0?'+':''}${u.litara}L</span></td><td class="mono" style="font-size:11px">${u.brDob||'—'}</td><td style="white-space:nowrap"><button class="btn btn-s" style="padding:3px 8px;font-size:11px" onclick="editUl('${u.id}')">✎</button> <button class="btn btn-r" style="padding:3px 8px;font-size:11px" onclick="deleteUl('${u.id}')">✕</button></td></tr>`;}).join('')+'</tbody></table></div>';
+}
+
+// ═══ RUČNA KOREKCIJA STANJA CISTERNE ═══
+function openKorekcija(){
+  const el=document.getElementById('kor-cist');
+  el.innerHTML='<option value="">— odaberi —</option>'+S.cistijerne.map(c=>`<option value="${c.id}">${c.reg} — ${c.vozac||''}</option>`).join('');
+  document.getElementById('kor-trenutno').value='';
+  document.getElementById('kor-razlika').value='';
+  document.getElementById('kor-razlog').value='';
+  openModal('korekcijaModal');
+}
+document.addEventListener('change',e=>{
+  if(e.target&&e.target.id==='kor-cist'){
+    const cid=e.target.value;
+    document.getElementById('kor-trenutno').value=cid?cisternaStanje(cid).toFixed(1)+' L':'';
+  }
+});
+async function saveKorekcija(){
+  const cid=document.getElementById('kor-cist').value;
+  const raz=parseFloat(document.getElementById('kor-razlika').value);
+  const razlog=document.getElementById('kor-razlog').value.trim();
+  if(!cid||!raz||!razlog){toast('⚠ Popuni sva polja (cisterna, razlika, razlog)!');return;}
+  try{
+    const podaci={datum:nowDT(),cistijernId:cid,dobav:'KOREKCIJA',brDob:'',gorivo:'',litara:raz,nap:razlog};
+    const ref=await window.FB.addDoc(window.FB.col('ulazi'),podaci);
+    S.ulazi.push({id:ref.id,...podaci});
+    renderUl();populateAll();closeModal('korekcijaModal');
+    toast('✓ Korekcija sačuvana');
+  }catch(e){toast('⚠ Greška: '+e.message);}
+}
+
+// ═══ PREGLED ═══
+function renderPregled(){
+  let list=[...S.otpremnice].reverse();
+  const od=document.getElementById('fil-od').value,do_=document.getElementById('fil-do').value;
+  const cist=document.getElementById('fil-cist').value,grad=document.getElementById('fil-grad').value;
+  if(od)list=list.filter(o=>o.datum>=od);if(do_)list=list.filter(o=>o.datum<=do_);
+  if(cist)list=list.filter(o=>o.cistijernId===cist);if(grad)list=list.filter(o=>o.gradId===grad);
+  const el=document.getElementById('tbl-pregled');
+  if(!list.length){el.innerHTML='<div class="empty">Nema rezultata</div>';return;}
+  el.innerHTML='<table><thead><tr><th>Broj</th><th>Datum</th><th>Cisterna</th><th>Gradilište</th><th>Gorivo</th><th>Voz.</th><th>Ukupno L</th><th></th></tr></thead><tbody>'+
+    list.map(o=>{const c=gC(o.cistijernId),g=gG(o.gradId),uk=o.stavke.reduce((a,s)=>a+s.litara,0);
+      return`<tr><td class="mono" style="font-size:11px">${o.brojOtp}</td><td class="mono" style="font-size:12px">${o.datum}</td><td><span class="tag t-ok">${c?c.reg:'?'}</span></td><td><span class="tag t-g">${g?g.naziv:'?'}</span></td><td style="font-size:12px">${o.gorivo}</td><td style="text-align:center">${o.stavke.length}</td><td><span class="tag t-l">${uk}L</span></td><td><button class="btn btn-pr" onclick="printOtp('${o.id}')">🖨</button></td></tr>`;
+    }).join('')+'</tbody></table>';
+}
+function resetFil(){['fil-od','fil-do'].forEach(id=>document.getElementById(id).value='');['fil-cist','fil-grad'].forEach(id=>document.getElementById(id).selectedIndex=0);renderPregled();}
+
+// ═══ ARHIVA ═══
+function renderArhiva(q){
+  const el=document.getElementById('arh-res');
+  if(!q||q.length<2){el.innerHTML='';return;}
+  const found=S.vozila.filter(v=>v.reg.toLowerCase().includes(q.toLowerCase())||(v.vozac||'').toLowerCase().includes(q.toLowerCase())||(v.model||'').toLowerCase().includes(q.toLowerCase()));
+  if(!found.length){el.innerHTML='<div class="card"><div class="empty">Nema vozila</div></div>';return;}
+  el.innerHTML=found.map(v=>{
+    const f=gF(v.firmaId);
+    let stavke=[];
+    S.otpremnice.forEach(o=>{o.stavke.forEach(s=>{if(s.kamionId===v.id)stavke.push({...s,datum:o.datum,brojOtp:o.brojOtp,grad:gG(o.gradId),cisterna:gC(o.cistijernId)});});});
+    stavke.sort((a,b)=>b.datum.localeCompare(a.datum));
+    const ukLit=stavke.reduce((a,s)=>a+s.litara,0);
+    const isB=v.tip==='bager';
+    return`<div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+        <div>
+          <span style="font-size:20px;font-weight:900;color:var(--acc);font-family:monospace">${v.reg}</span>
+          <span class="tag ${tipTag(v.tip)}" style="margin-left:8px">${tipL(v.tip)}</span>
+          <div style="font-size:12px;color:var(--mut2);margin-top:3px">${v.model||''} · ${f?f.naziv:'?'} · ${v.vozac||'—'}</div>
+        </div>
+        <span class="tag t-l" style="font-size:14px;padding:6px 14px">${ukLit} L ukupno</span>
+      </div>
+      ${stavke.length?`<div class="tw"><table>
+        <thead><tr><th>Datum</th><th>Otpremnica</th><th>Cisterna</th><th>Gradilište</th><th>${isB?'Moto sati':'KM poč→krj'}</th><th>Prirast</th><th>Litara</th><th>Vozač</th></tr></thead>
+        <tbody>${stavke.map(s=>`<tr>
+          <td class="mono" style="font-size:11px">${s.datum}</td>
+          <td class="mono" style="font-size:10px;color:var(--mut2)">${s.brojOtp}</td>
+          <td>${s.cisterna?`<span class="tag t-ok">${s.cisterna.reg}</span>`:'—'}</td>
+          <td>${s.grad?`<span class="tag t-g">${s.grad.naziv}</span>`:'—'}</td>
+          <td class="mono">${isB?s.motoSatiP+'→'+s.motoSatiK+' mh':s.kmPocetak+'→'+s.kmKraj+' km'}</td>
+          <td class="mono"><b>${isB?+(s.motoSatiK-s.motoSatiP).toFixed(1)+' mh':s.kmKraj-s.kmPocetak+' km'}</b></td>
+          <td><span class="tag t-l">${s.litara}L</span></td>
+          <td style="font-size:12px">${s.vozacIme||'—'}</td>
+        </tr>`).join('')}</tbody></table></div>`
+        :`<div class="empty" style="padding:20px">Nema evidencije točenja</div>`}
+    </div>`;
+  }).join('');
+}
+
+// ═══ RAZDUŽENJE ═══
+function setRazToday(){document.getElementById('raz-od').value=today();document.getElementById('raz-do').value=today();renderRaz();}
+function renderRaz(){
+  const od=document.getElementById('raz-od').value,do_=document.getElementById('raz-do').value;
+  const el=document.getElementById('raz-content');
+  if(!S.cistijerne.length){el.innerHTML='<div class="empty">Nema cistijerni</div>';return;}
+  el.innerHTML=S.cistijerne.map(c=>{
+    const ul=S.ulazi.filter(u=>u.cistijernId===c.id&&(!od||u.datum.slice(0,10)>=od)&&(!do_||u.datum.slice(0,10)<=do_));
+    const ukUl=ul.reduce((a,u)=>a+u.litara,0);
+    const otps=S.otpremnice.filter(o=>o.cistijernId===c.id&&(!od||o.datum>=od)&&(!do_||o.datum<=do_));
+    const ukTo=otps.reduce((a,o)=>a+o.stavke.reduce((b,s)=>b+s.litara,0),0);
+    const trD=S.transferi.filter(t=>t.cistijernDajeId===c.id&&(!od||t.datum.slice(0,10)>=od)&&(!do_||t.datum.slice(0,10)<=do_));
+    const ukTrD=trD.reduce((a,t)=>a+t.litara,0);
+    const trP=S.transferi.filter(t=>t.cistijernPrimaId===c.id&&(!od||t.datum.slice(0,10)>=od)&&(!do_||t.datum.slice(0,10)<=do_));
+    const ukTrP=trP.reduce((a,t)=>a+t.litara,0);
+    const saldo=ukUl+ukTrP-ukTo-ukTrD;
+    const ok=Math.abs(saldo)<0.5;
+    return`<div class="raz-box">
+      <div class="raz-head"><span class="raz-name">🛢️ ${c.reg}</span><span class="tag ${ok?'t-ok':'t-warn'}">${ok?'✅ Pokriva se':'⚠️ Razlika: '+saldo.toFixed(1)+' L'}</span></div>
+      <div class="raz-row"><span>➕ Ulaz od dobavljača</span><span class="raz-val" style="color:var(--acc)">${ukUl} L</span></div>
+      <div class="raz-row"><span>➕ Primljeno od cisterne</span><span class="raz-val" style="color:var(--acc)">${ukTrP} L</span></div>
+      <div class="raz-row"><span>➖ Točeno vozilima</span><span class="raz-val" style="color:var(--red)">${ukTo} L</span></div>
+      <div class="raz-row"><span>➖ Dato cistijerni</span><span class="raz-val" style="color:var(--red)">${ukTrD} L</span></div>
+      <div class="raz-row"><span>= Saldo</span><span class="raz-val" style="color:${ok?'var(--acc)':'var(--red)'}">${saldo.toFixed(1)} L</span></div>
+    </div>`;
+  }).join('');
+}
+
+// ═══ IZVJEŠTAJ ═══
+function renderIzv(){
+  const all=S.otpremnice;
+  const ukL=all.reduce((a,o)=>a+o.stavke.reduce((b,s)=>b+s.litara,0),0);
+  const ukBr=all.reduce((a,o)=>a+o.stavke.length,0);
+  const dnevi=[...new Set(all.map(o=>o.datum))].length;
+  document.getElementById('stats-g').innerHTML=`
+    <div class="stat"><div class="stat-n">${all.length}</div><div class="stat-l">Otpremnica</div></div>
+    <div class="stat"><div class="stat-n">${ukBr}</div><div class="stat-l">Točenja</div></div>
+    <div class="stat"><div class="stat-n">${ukL.toLocaleString()}</div><div class="stat-l">Ukupno L</div></div>
+    <div class="stat"><div class="stat-n">${dnevi}</div><div class="stat-l">Dana aktivno</div></div>`;
+  // Po firmi
+  const fm={};all.forEach(o=>o.stavke.forEach(s=>{const v=gV(s.kamionId);if(!v)return;if(!fm[v.firmaId])fm[v.firmaId]={lit:0,br:0};fm[v.firmaId].lit+=s.litara;fm[v.firmaId].br++;}));
+  const fa=Object.entries(fm).sort((a,b)=>b[1].lit-a[1].lit);const mxF=fa[0]?.[1]?.lit||1;
+  document.getElementById('rep-f').innerHTML=fa.map(([fid,d])=>{const f=gF(fid);return`<div class="rep-item"><div style="display:flex;justify-content:space-between"><span style="font-weight:700">${f?f.naziv:'?'}</span><span class="tag t-l">${d.lit.toLocaleString()} L</span></div><div class="rep-bar-wrap"><div class="rep-bar" style="width:${d.lit/mxF*100}%;background:var(--acc3)"></div></div><div style="font-size:11px;color:var(--mut2);margin-top:3px">${d.br} točenja</div></div>`;}).join('')||'<div class="empty">Nema podataka</div>';
+  // Po gradilištu
+  const gm={};all.forEach(o=>o.stavke.forEach(s=>{if(!gm[o.gradId])gm[o.gradId]={lit:0,br:0};gm[o.gradId].lit+=s.litara;gm[o.gradId].br++;}));
+  const ga=Object.entries(gm).sort((a,b)=>b[1].lit-a[1].lit);const mxG=ga[0]?.[1]?.lit||1;
+  document.getElementById('rep-g').innerHTML=ga.map(([gid,d])=>{const g=gG(gid);return`<div class="rep-item"><div style="display:flex;justify-content:space-between"><span style="font-weight:700">${g?g.naziv:'?'}</span><span class="tag t-l">${d.lit.toLocaleString()} L</span></div><div class="rep-bar-wrap"><div class="rep-bar" style="width:${d.lit/mxG*100}%;background:var(--acc2)"></div></div><div style="font-size:11px;color:var(--mut2);margin-top:3px">${g?g.lok:''} · ${d.br} točenja</div></div>`;}).join('')||'<div class="empty">Nema podataka</div>';
+  // Po tipu
+  const tm={kamion:{lit:0,br:0,vz:new Set()},bager:{lit:0,br:0,vz:new Set()},malo:{lit:0,br:0,vz:new Set()}};
+  all.forEach(o=>o.stavke.forEach(s=>{const v=gV(s.kamionId);if(!v)return;const t=v.tip;if(!tm[t])tm[t]={lit:0,br:0,vz:new Set()};tm[t].lit+=s.litara;tm[t].br++;tm[t].vz.add(v.id);}));
+  document.getElementById('rep-t').innerHTML=Object.entries(tm).map(([t,d])=>`<tr><td>${tipL(t)}</td><td>${d.vz.size}</td><td>${d.br}</td><td><span class="tag t-l">${d.lit.toLocaleString()} L</span></td></tr>`).join('');
+}
+
+// ═══════════════════════════════════════════════
+// EXCEL IMPORT
+// ═══════════════════════════════════════════════
+function downloadTemplate(){
+  if(typeof XLSX==='undefined'){toast('⚠ Učitava se XLSX biblioteka, pokušaj za sekundu...',3000);return;}
+  const ws=XLSX.utils.aoa_to_sheet([
+    ['Registracija','Tip','Model','Firma','Vozač'],
+    ['A01-K-752','kamion','MAN TGS 18t','Gradnja Plus d.o.o.','Mirko Mirković'],
+    ['BAG-001','bager','Caterpillar 320D','Gradnja Plus d.o.o.','Haris Muratović'],
+    ['K09-J-456','kamion','Scania R500','CestaCo d.d.','Senad Sejdić'],
+    ['A22-M-100','malo','VW Transporter','CestaCo d.d.','Adin Lelo'],
+  ]);
+  ws['!cols']=[{wch:16},{wch:10},{wch:20},{wch:25},{wch:22}];
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,ws,'Vozila');
+  XLSX.writeFile(wb,'predlozak_vozila.xlsx');
+  toast('✓ Predložak preuzet!');
+}
+
+function handleDrop(e){e.preventDefault();e.stopPropagation();const f=e.dataTransfer.files[0];if(f)processExcelFile(f);}
+function handleFile(inp){if(inp.files[0])processExcelFile(inp.files[0]);inp.value='';}
+
+function processExcelFile(file){
+  if(typeof XLSX==='undefined'){toast('⚠ XLSX biblioteka se još učitava...',3000);return;}
+  const reader=new FileReader();
+  reader.onload=function(e){
+    try{
+      const wb=XLSX.read(new Uint8Array(e.target.result),{type:'array'});
+      const ws=wb.Sheets[wb.SheetNames[0]];
+      const rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:''});
+      if(rows.length<2){toast('⚠ Excel nema podataka!');return;}
+      // Skip header row
+      const dataRows=rows.slice(1).filter(r=>r[0]&&String(r[0]).trim());
+      importRows=dataRows;
+      showImportPreview(dataRows);
+    }catch(err){toast('⚠ Greška pri čitanju fajla: '+err.message);}
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function normTip(t){
+  const s=String(t||'').toLowerCase().trim();
+  if(s.includes('bager')||s.includes('stroj')||s.includes('excav')||s.includes('moto')||s.includes('maš'))return'bager';
+  if(s.includes('malo')||s.includes('putn')||s.includes('osob'))return'malo';
+  return'kamion';
+}
+
+function showImportPreview(rows){
+  let html='<table><thead><tr><th>Status</th><th>Registracija</th><th>Tip</th><th>Model</th><th>Firma</th><th>Vozač</th><th>Napomena</th></tr></thead><tbody>';
+  let nOk=0,nNew=0,nWarn=0;
+  rows.forEach(r=>{
+    const reg=String(r[0]||'').trim().toUpperCase();
+    const tip=normTip(r[1]);
+    const model=String(r[2]||'').trim();
+    const firmaNaziv=String(r[3]||'').trim();
+    const vozac=String(r[4]||'').trim();
+    const exists=S.vozila.find(v=>v.reg===reg);
+    const firmaExists=S.firme.find(f=>f.naziv.toLowerCase()===firmaNaziv.toLowerCase());
+    let status,cls,note='';
+    if(!reg){return;}
+    if(exists){status='🔄 Ažurira';cls='import-row-warn';nWarn++;}
+    else{status='✅ Novi';cls='import-row-ok';nOk++;}
+    if(firmaNaziv&&!firmaExists){note='Firma "'+firmaNaziv+'" će biti kreirana';nNew++;}
+    html+=`<tr class="${cls}"><td style="font-size:12px">${status}</td><td style="font-family:monospace;font-weight:700;color:var(--acc)">${reg}</td><td>${tipL(tip)}</td><td style="font-size:12px">${model||'—'}</td><td>${firmaNaziv||'—'}</td><td style="font-size:12px">${vozac||'—'}</td><td style="font-size:11px;color:var(--acc2)">${note}</td></tr>`;
+  });
+  html+='</tbody></table>';
+  document.getElementById('import-tbl').innerHTML=html;
+  document.getElementById('import-stats').innerHTML=`<span class="tag t-ok" style="margin-right:6px">✅ ${nOk} novih</span><span class="tag t-warn" style="margin-right:6px">${nWarn} ažuriranja</span>${nNew?`<span class="tag t-new">${nNew} novih firmi</span>`:''}`;
+  document.getElementById('import-preview').style.display='block';
+}
+
+async function confirmImport(){
+  let addedV=0,updatedV=0,addedF=0;
+  const ops=[];
+  const newFirme=[]; // {naziv} - kreiramo prvo firme da im znamo id prije vozila
+  importRows.forEach(r=>{
+    const reg=String(r[0]||'').trim().toUpperCase();if(!reg)return;
+    const firmaNaziv=String(r[3]||'').trim();
+    if(firmaNaziv && !S.firme.find(f=>f.naziv.toLowerCase()===firmaNaziv.toLowerCase()) && !newFirme.find(f=>f.naziv.toLowerCase()===firmaNaziv.toLowerCase())){
+      newFirme.push({naziv:firmaNaziv});
+    }
+  });
+  newFirme.forEach(f=>{
+    const id=window.FB.newDocId('firme');
+    ops.push({type:'set',col:'firme',id,data:{naziv:f.naziv,adr:''}});
+    S.firme.push({id,naziv:f.naziv,adr:''}); // optimistički, da ih nađemo odmah ispod
+    addedF++;
+  });
+  importRows.forEach(r=>{
+    const reg=String(r[0]||'').trim().toUpperCase();if(!reg)return;
+    const tip=normTip(r[1]);
+    const model=String(r[2]||'').trim();
+    const firmaNaziv=String(r[3]||'').trim();
+    const vozac=String(r[4]||'').trim();
+    let firmaId='';
+    if(firmaNaziv){
+      const f=S.firme.find(f=>f.naziv.toLowerCase()===firmaNaziv.toLowerCase());
+      firmaId=f?f.id:'';
+    }
+    const idx=S.vozila.findIndex(v=>v.reg===reg);
+    if(idx>=0){
+      ops.push({type:'set',col:'vozila',id:S.vozila[idx].id,data:{tip,model,firmaId,vozac},merge:true});
+      updatedV++;
+    }else{
+      const id=window.FB.newDocId('vozila');
+      ops.push({type:'set',col:'vozila',id,data:{reg,tip,model,firmaId,vozac}});
+      addedV++;
+    }
+  });
+  try{
+    await window.FB.batchWrite(ops);
+    populateAll();renderVozilaTbl();cancelImport();
+    toast(`✓ Uvezeno: ${addedV} novih, ${updatedV} ažurirano, ${addedF} firmi kreirano`);
+  }catch(e){toast('⚠ Greška pri uvozu: '+e.message);}
+}
+function cancelImport(){document.getElementById('import-preview').style.display='none';importRows=[];}
+
+// Drop zone drag styling
+const dz=document.getElementById('drop-zone');
+dz.addEventListener('dragover',e=>{e.preventDefault();dz.classList.add('drag-over');});
+dz.addEventListener('dragleave',()=>dz.classList.remove('drag-over'));
+dz.addEventListener('drop',e=>{e.preventDefault();dz.classList.remove('drag-over');const f=e.dataTransfer.files[0];if(f)processExcelFile(f);});
+
+// ═══════════════════════════════════════════════
+// EDITABILNA TABELA VOZILA
+// ═══════════════════════════════════════════════
+function renderVozilaTbl(){
+  const q=(document.getElementById('vfil-q')?.value||'').toLowerCase();
+  const tipF=document.getElementById('vfil-tip')?.value||'';
+  const firF=document.getElementById('vfil-fir')?.value||'';
+  let list=S.vozila.filter(v=>{
+    if(q&&!v.reg.toLowerCase().includes(q)&&!(v.vozac||'').toLowerCase().includes(q)&&!(v.model||'').toLowerCase().includes(q))return false;
+    if(tipF&&v.tip!==tipF)return false;
+    if(firF&&v.firmaId!==firF)return false;
+    return true;
+  });
+  const cnt=document.getElementById('vfil-count');
+  if(cnt)cnt.textContent=`${list.length} / ${S.vozila.length} vozila`;
+  const el=document.getElementById('tbl-vozila');
+  if(!list.length){el.innerHTML='<div class="empty">Nema vozila u bazi</div>';return;}
+  el.innerHTML='<table><thead><tr><th>Registracija</th><th>Tip</th><th>Model</th><th>Firma</th><th>Vozač</th><th style="text-align:center">Akcije</th></tr></thead><tbody id="veh-tbody">'+
+    list.map(v=>renderVehRow(v)).join('')+'</tbody></table>';
+}
+
+function renderVehRow(v){
+  const f=gF(v.firmaId);
+  return`<tr id="vrow-${v.id}">
+    <td style="font-family:monospace;font-weight:700;color:var(--acc)">${v.reg}</td>
+    <td><span class="tag ${tipTag(v.tip)}">${tipL(v.tip)}</span></td>
+    <td style="font-size:12px;color:var(--mut2)">${v.model||'—'}</td>
+    <td><span class="tag t-f" style="font-size:11px">${f?f.naziv:'?'}</span></td>
+    <td style="font-size:12px">${v.vozac||'—'}</td>
+    <td style="text-align:center;white-space:nowrap">
+      <button class="btn btn-qr" style="padding:4px 8px;font-size:11px" onclick="showQR('${v.id}')">QR</button>
+      <button class="btn btn-s" style="padding:4px 8px;font-size:11px" onclick="editVehRow('${v.id}')">✏️</button>
+      <button class="btn btn-r" onclick="delVeh('${v.id}')">✕</button>
+    </td>
+  </tr>`;
+}
+
+function editVehRow(id){
+  const v=gV(id);if(!v)return;
+  const f=gF(v.firmaId);
+  const firOpts=S.firme.map(f2=>`<option value="${f2.id}" ${f2.id===v.firmaId?'selected':''}>${f2.naziv}</option>`).join('');
+  document.getElementById('vrow-'+id).outerHTML=`<tr id="vrow-${id}" style="background:rgba(200,240,74,.04)">
+    <td class="td-edit"><input id="ve-reg-${id}" value="${v.reg}" style="text-transform:uppercase"></td>
+    <td class="td-edit"><select id="ve-tip-${id}">
+      <option value="kamion" ${v.tip==='kamion'?'selected':''}>🚛 Kamion</option>
+      <option value="bager" ${v.tip==='bager'?'selected':''}>🏗️ Bager</option>
+      <option value="malo" ${v.tip==='malo'?'selected':''}>🚗 Malo</option>
+    </select></td>
+    <td class="td-edit"><input id="ve-mod-${id}" value="${v.model||''}"></td>
+    <td class="td-edit"><select id="ve-fir-${id}">${firOpts}</select></td>
+    <td class="td-edit"><input id="ve-voz-${id}" value="${v.vozac||''}"></td>
+    <td style="text-align:center;white-space:nowrap">
+      <button class="btn btn-p" style="padding:5px 10px;font-size:12px" onclick="saveVehEdit('${id}')">✓</button>
+      <button class="btn btn-s" style="padding:5px 10px;font-size:12px" onclick="cancelVehEdit('${id}')">✕</button>
+    </td>
+  </tr>`;
+}
+
+async function saveVehEdit(id){
+  const v=gV(id);if(!v)return;
+  const podaci={
+    reg:document.getElementById('ve-reg-'+id).value.trim().toUpperCase(),
+    tip:document.getElementById('ve-tip-'+id).value,
+    model:document.getElementById('ve-mod-'+id).value.trim(),
+    firmaId:document.getElementById('ve-fir-'+id).value,
+    vozac:document.getElementById('ve-voz-'+id).value.trim()
+  };
+  try{
+    await window.FB.setDoc(window.FB.docRef('vozila',id),podaci,{merge:true});
+    Object.assign(v,podaci);
+    document.getElementById('vrow-'+id).outerHTML=renderVehRow(v);
+    toast('✓ Vozilo ažurirano');
+  }catch(e){toast('⚠ Greška: '+e.message);}
+}
+
+function cancelVehEdit(id){
+  const v=gV(id);if(!v)return;
+  document.getElementById('vrow-'+id).outerHTML=renderVehRow(v);
+}
+
+async function delVeh(id){
+  if(!confirm('Obrisati ovo vozilo?'))return;
+  try{
+    await window.FB.deleteDoc(window.FB.docRef('vozila',id));
+    S.vozila=S.vozila.filter(v=>v.id!==id);
+    renderVozilaTbl();toast('Obrisano.');
+  }catch(e){toast('⚠ Greška: '+e.message);}
+}
+
+// Add vehicle modal
+function openAddVehicle(){
+  // Populate firma select
+  const el=document.getElementById('nv-fir');
+  el.innerHTML='<option value="">— odaberi —</option>';
+  S.firme.forEach(f=>{el.innerHTML+=`<option value="${f.id}">${f.naziv}</option>`;});
+  document.getElementById('nv-reg').value='';
+  document.getElementById('nv-mod').value='';
+  document.getElementById('nv-voz').value='';
+  openModal('addVehModal');
+}
+async function saveNewVehicle(){
+  const reg=document.getElementById('nv-reg').value.trim().toUpperCase();
+  const fir=document.getElementById('nv-fir').value;
+  if(!reg||!fir){toast('⚠ Registracija i firma su obavezni!');return;}
+  if(S.vozila.find(v=>v.reg===reg)){toast('⚠ Ta registracija već postoji!');return;}
+  const napomena=document.getElementById('nv-nap')?document.getElementById('nv-nap').value.trim():'';
+  try{
+    const podaci={reg,tip:document.getElementById('nv-tip').value,model:document.getElementById('nv-mod').value.trim(),firmaId:fir,vozac:document.getElementById('nv-voz').value.trim(),napomena};
+    const ref=await window.FB.addDoc(window.FB.col('vozila'),podaci);
+    S.vozila.push({id:ref.id,...podaci}); // optimistički, dok ne stigne potvrda sa servera
+    closeModal('addVehModal');renderVozilaTbl();toast('✓ Vozilo dodano!');
+    if(window._quickAddForEntry){
+      window._quickAddForEntry=false;
+      selectVeh(ref.id);
+    }
+  }catch(e){toast('⚠ Greška: '+e.message);}
+}
+
+// ═══════════════════════════════════════════════
+// QR KODOVI
+// ═══════════════════════════════════════════════
+function showQR(id){
+  const v=gV(id);if(!v)return;
+  const f=gF(v.firmaId);
+  document.getElementById('print-title').textContent=`QR kod — ${v.reg}`;
+  document.getElementById('print-body').innerHTML=`
+    <div style="background:#fff;padding:32px;text-align:center;font-family:Arial,sans-serif">
+      <h2 style="font-size:22px;margin-bottom:6px;color:#000">${v.reg}</h2>
+      <p style="font-size:13px;color:#555;margin-bottom:16px">${tipL(v.tip)} · ${v.model||''} · ${f?f.naziv:''}</p>
+      <div id="qr-single" style="display:inline-block;margin-bottom:16px"></div>
+      <p style="font-size:11px;color:#888">Skeniraj za unos točenja</p>
+    </div>`;
+  openModal('printModal');
+  setTimeout(()=>{
+    const el=document.getElementById('qr-single');
+    if(el&&typeof QRCode!=='undefined'){
+      new QRCode(el,{text:JSON.stringify({id:v.id,reg:v.reg,tip:v.tip}),width:200,height:200,colorDark:'#000000',colorLight:'#ffffff'});
+    }else if(el){el.innerHTML='<p style="color:red;font-size:12px">QRCode biblioteka se učitava...</p>';}
+  },200);
+}
+
+function printAllQR(){
+  if(S.vozila.length===0){toast('⚠ Nema vozila u bazi!');return;}
+  document.getElementById('print-title').textContent='QR kodovi — sva vozila';
+  document.getElementById('print-body').innerHTML=`
+    <div style="background:#fff;padding:16px;font-family:Arial,sans-serif">
+      <h3 style="font-size:16px;margin-bottom:12px;border-bottom:2px solid #000;padding-bottom:6px">QR kodovi vozila — GorivoLog</h3>
+      <div class="qr-grid" id="qr-all-grid"></div>
+    </div>`;
+  openModal('printModal');
+  setTimeout(()=>{
+    const grid=document.getElementById('qr-all-grid');
+    if(!grid)return;
+    S.vozila.forEach(v=>{
+      const f=gF(v.firmaId);
+      const div=document.createElement('div');div.className='qr-item';
+      const qrdiv=document.createElement('div');
+      div.appendChild(qrdiv);
+      div.innerHTML+=`<div class="qr-item-reg">${v.reg}</div><div class="qr-item-sub">${tipL(v.tip)} · ${f?f.naziv:''}</div><div class="qr-item-sub">${v.vozac||''}</div>`;
+      grid.appendChild(div);
+      if(typeof QRCode!=='undefined'){new QRCode(qrdiv,{text:JSON.stringify({id:v.id,reg:v.reg,tip:v.tip}),width:100,height:100,colorDark:'#000000',colorLight:'#ffffff'});}
+      else{qrdiv.innerHTML='<div style="width:100px;height:100px;border:1px dashed #ccc;display:flex;align-items:center;justify-content:center;font-size:10px;color:#999">QR</div>';}
+    });
+  },300);
+}
+
+// ═══════════════════════════════════════════════
+// PRINT OTPREMNICA
+// ═══════════════════════════════════════════════
+function printOtp(id,obj){
+  const o=obj||S.otpremnice.find(x=>x.id===id);if(!o)return;
+  const c=gC(o.cistijernId),g=gG(o.gradId),mf=S.mojaFirma;
+  const ukL=o.stavke.reduce((a,s)=>a+s.litara,0);
+  const rows=o.stavke.map((s,i)=>{
+    const v=gV(s.kamionId),isB=v&&v.tip==='bager';
+    const mj=isB?`${s.motoSatiP}→${s.motoSatiK} mh`:`${s.kmPocetak}→${s.kmKraj} km`;
+    const pr=isB?`${+(s.motoSatiK-s.motoSatiP).toFixed(1)} mh`:`${s.kmKraj-s.kmPocetak} km`;
+    return`<tr>
+      <td>${i+1}</td>
+      <td>${s.vozacIme||'—'}</td>
+      <td style="font-family:monospace;font-weight:700">${v?v.reg:'?'}</td>
+      <td style="font-size:9px;color:#666">${v?v.model||'':''}</td>
+      <td style="font-family:monospace">${mj}</td>
+      <td style="font-family:monospace;font-weight:700">${pr}</td>
+      <td style="font-family:monospace;font-weight:700;text-align:right">${s.litara}</td>
+      <td style="text-align:center">${s.sig?`<img src="${s.sig}" style="height:30px;width:auto">`:'<span style="font-size:9px;color:#ccc">—</span>'}</td>
+    </tr>`;
+  }).join('');
+  document.getElementById('print-title').textContent=`Otpremnica ${o.brojOtp}`;
+  document.getElementById('print-body').innerHTML=`<div class="otp">
+    <div class="otp-top">
+      <div class="otp-co"><strong>${mf.naziv||'[Vaša firma]'}</strong>${mf.adresa||''}<br>${mf.idBroj?'ID: '+mf.idBroj:''} ${mf.tel?'| Tel: '+mf.tel:''}<br>${mf.email||''}</div>
+      <div><div class="otp-ttl">OTPREMNICA</div><div style="font-family:monospace;font-size:12px;text-align:right">Br: <b>${o.brojOtp}</b></div><div style="font-size:10px;color:#666;text-align:right">${o.datum}</div></div>
+    </div>
+    <div class="otp-meta">
+      <div class="otp-mb"><div class="otp-ml">Cisterna</div><div class="otp-mv">${c?c.reg:'—'}</div><div class="otp-ms">Vozač: ${c?c.vozac:'—'}</div></div>
+      <div class="otp-mb"><div class="otp-ml">Gradilište</div><div class="otp-mv">${g?g.naziv:'—'}</div><div class="otp-ms">${g?g.lok||'':''}</div></div>
+      <div class="otp-mb"><div class="otp-ml">Gorivo</div><div class="otp-mv">${o.gorivo}</div></div>
+      <div class="otp-mb"><div class="otp-ml">Datum</div><div class="otp-mv">${o.datum}</div><div class="otp-ms">${o.stavke.length} vozila</div></div>
+    </div>
+    <table><thead><tr><th>R.br.</th><th>Ime i prezime vozača</th><th>Registracija</th><th>Model</th><th>KM / Moto sati</th><th>Pređeno</th><th style="text-align:right">Litara</th><th>Potpis</th></tr></thead>
+    <tbody>${rows}<tr style="background:#f0f0f0;font-weight:700"><td colspan="6" style="text-align:right;font-size:10px">UKUPNO:</td><td style="font-family:monospace;font-size:13px;text-align:right">${ukL} L</td><td></td></tr></tbody></table>
+    <div class="otp-sigs">
+      <div class="otp-sig"><div class="otp-sig-lbl">Vozač cistijerne</div><div class="otp-sig-line"></div><div class="otp-sig-nm">${c?c.vozac:''}</div></div>
+      <div class="otp-sig"><div class="otp-sig-lbl">Odgovorna osoba</div><div class="otp-sig-line"></div><div class="otp-sig-nm">${mf.osoba||''}</div></div>
+      <div class="otp-sig"><div class="otp-sig-lbl">Pečat i datum</div><div class="otp-sig-line"></div></div>
+    </div>
+    <div class="otp-foot"><span>${mf.naziv||''} | ${mf.adresa||''}</span><span>${o.brojOtp} | ${o.datum} | GorivoLog v4</span></div>
+  </div>`;
+  openModal('printModal');
+}
+
+// ═══════════════════════════════════════════════
+// SIGNATURE
+// ═══════════════════════════════════════════════
+let sigCtx,sigDrw=false,sigLX=0,sigLY=0;
+function openSig(target){
+  sigTarget=target;
+  const descs={entry:'Potpis vozača kamiona/bagera',tr1:'Vozač cistijerne koja DAJE gorivo',tr2:'Vozač cistijerne koja PRIMA gorivo',treca:'Potpis primaoca goriva (treće lice)'};
+  document.getElementById('sig-desc').textContent=descs[target]||'Potpiši prstom';
+  openModal('sigModal');
+  const c=document.getElementById('sigCanvas');
+  const r=c.getBoundingClientRect();
+  const dpr=window.devicePixelRatio||1;
+  c.width=r.width*dpr||480;c.height=150*dpr;
+  c.style.width='100%';c.style.height='150px';
+  sigCtx=c.getContext('2d');sigCtx.scale(dpr,dpr);
+  sigCtx.fillStyle='#fff';sigCtx.fillRect(0,0,c.width,c.height);
+  sigCtx.strokeStyle='#000';sigCtx.lineWidth=2.5;sigCtx.lineCap='round';sigCtx.lineJoin='round';
+  sigDrw=false;
+}
+function gPos(e){const r=document.getElementById('sigCanvas').getBoundingClientRect();if(e.touches)return{x:e.touches[0].clientX-r.left,y:e.touches[0].clientY-r.top};return{x:e.clientX-r.left,y:e.clientY-r.top};}
+const sc=document.getElementById('sigCanvas');
+sc.addEventListener('mousedown',e=>{sigDrw=true;const p=gPos(e);sigLX=p.x;sigLY=p.y;});
+sc.addEventListener('mousemove',e=>{if(!sigDrw||!sigCtx)return;const p=gPos(e);sigCtx.beginPath();sigCtx.moveTo(sigLX,sigLY);sigCtx.lineTo(p.x,p.y);sigCtx.stroke();sigLX=p.x;sigLY=p.y;});
+sc.addEventListener('mouseup',()=>sigDrw=false);sc.addEventListener('mouseleave',()=>sigDrw=false);
+sc.addEventListener('touchstart',e=>{e.preventDefault();sigDrw=true;const p=gPos(e);sigLX=p.x;sigLY=p.y;},{passive:false});
+sc.addEventListener('touchmove',e=>{e.preventDefault();if(!sigDrw||!sigCtx)return;const p=gPos(e);sigCtx.beginPath();sigCtx.moveTo(sigLX,sigLY);sigCtx.lineTo(p.x,p.y);sigCtx.stroke();sigLX=p.x;sigLY=p.y;},{passive:false});
+sc.addEventListener('touchend',()=>sigDrw=false);
+function clearSig(){if(sigCtx){const c=document.getElementById('sigCanvas');sigCtx.fillStyle='#fff';sigCtx.fillRect(0,0,c.width,c.height);}}
+function saveSig(){
+  const c=document.getElementById('sigCanvas');
+  const data=c.toDataURL('image/png');
+  sigs[sigTarget]=data;
+  const targets={entry:'e-sig-p',tr1:'tr-s1-p',tr2:'tr-s2-p',treca:'tl-sig-p'};
+  const el=document.getElementById(targets[sigTarget]);
+  if(el)el.innerHTML=`<img src="${data}" style="height:100%;width:auto;object-fit:contain">`;
+  closeModal('sigModal');toast('✓ Potpis sačuvan');
+}
+
+// Click outside modal to close
+document.querySelectorAll('.modal').forEach(m=>{m.addEventListener('click',e=>{if(e.target===m&&m.id!=='printModal')closeModal(m.id);});});
+
+// ═══════════════════════════════════════════════
+// POSTAVKE
+// ═══════════════════════════════════════════════
+// ═══ RESET SISTEMA ═══
+function openResetModal(){
+  document.getElementById('reset-confirm-txt').value='';
+  openModal('resetModal');
+}
+async function izvrsiReset(){
+  const txt=document.getElementById('reset-confirm-txt').value.trim().toUpperCase();
+  if(txt!=='RESETUJ'){toast('⚠ Upišite tačno "RESETUJ" da potvrdite.');return;}
+  const btn=document.getElementById('reset-confirm-btn');
+  if(btn){btn.disabled=true;btn.textContent='Brišem...';}
+  try{
+    const kolekcije=['cistijerne','firme','gradilista','vozila','ulazi','otpremnice','otpremnice3','transferi','treceLiceFirme','treceVozila'];
+    for(const k of kolekcije){ await window.FB.wipeCollection(k); }
+    await window.FB.setDoc(window.FB.docRef('settings','mojaFirma'),{naziv:'',adresa:'',idBroj:'',tel:'',email:'',osoba:''});
+    await window.FB.setDoc(window.FB.docRef('settings','counter'),{counter:100});
+    toast('✓ Sistem resetovan.');
+    setTimeout(()=>location.reload(),800);
+  }catch(e){
+    toast('⚠ Greška pri resetu: '+e.message,5000);
+    if(btn){btn.disabled=false;btn.textContent='🗑 Da, obriši sve podatke';}
+  }
+}
+
+function initPost(){
+  const mf=S.mojaFirma;
+  document.getElementById('mf-n').value=mf.naziv||'';document.getElementById('mf-a').value=mf.adresa||'';
+  document.getElementById('mf-id').value=mf.idBroj||'';document.getElementById('mf-t').value=mf.tel||'';
+  document.getElementById('mf-e').value=mf.email||'';document.getElementById('mf-o').value=mf.osoba||'';
+  renderLists();
+  renderUsersList();
+}
+
+// ═══ KORISNICI (prijave) ═══
+async function kreirajKorisnika(){
+  const user=document.getElementById('nu-user').value.trim().toLowerCase();
+  const pass=document.getElementById('nu-pass').value;
+  const ime=document.getElementById('nu-ime').value.trim();
+  const role=document.getElementById('nu-role').value;
+  if(!user||!pass){toast('⚠ Korisničko ime i lozinka su obavezni!');return;}
+  if(pass.length<6){toast('⚠ Lozinka mora imati barem 6 karaktera!');return;}
+  if(!/^[a-z0-9._-]+$/.test(user)){toast('⚠ Korisničko ime: samo slova, brojevi, tačka, crtica (bez razmaka/šumnika).');return;}
+  try{
+    await window.FB.createDriver(user,pass,ime,'',role);
+    document.getElementById('nu-user').value='';document.getElementById('nu-pass').value='';document.getElementById('nu-ime').value='';
+    toast('✓ Nalog kreiran! Korisničko ime: '+user);
+  }catch(e){
+    const map={'auth/email-already-in-use':'To korisničko ime je već zauzeto.','auth/weak-password':'Lozinka je preslaba (min. 6 karaktera).'};
+    toast('⚠ '+(map[e.code]||e.message),4000);
+  }
+}
+
+function renderUsersList(){
+  const el=document.getElementById('lst-users');
+  if(!el)return;
+  if(!allUsers.length){el.innerHTML='<div style="color:var(--mut2);font-size:12px;padding:8px">Nema kreiranih naloga još.</div>';return;}
+  el.innerHTML=allUsers.map(u=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--bord)">
+    <div><b>${u.puno_ime||u.username}</b> <span class="tag ${u.role==='admin'?'t-b':'t-ok'}" style="margin-left:6px">${u.role==='admin'?'👔 Admin':'🚛 Vozač'}</span>
+    <br><span style="font-size:11px;color:var(--mut2)">korisničko ime: ${u.username}</span></div>
+    <button class="btn btn-r" onclick="deaktivirajKorisnika('${u.id}','${u.username}')" title="Ukida pristup (ne briše Auth nalog)">✕</button>
+  </div>`).join('');
+}
+
+async function deaktivirajKorisnika(uid,username){
+  if(uid===currentUser.uid){toast('⚠ Ne možeš ukinuti sopstveni nalog.');return;}
+  if(!confirm(`Ukinuti pristup korisniku "${username}"? Neće se moći prijaviti dok mu ponovo ne dodijeliš profil.`))return;
+  try{
+    await window.FB.deleteDoc(window.FB.docRef('users',uid));
+    toast('✓ Pristup ukinut za '+username);
+  }catch(e){toast('⚠ Greška: '+e.message);}
+}
+function sacuvajMF(){const data={naziv:document.getElementById('mf-n').value.trim(),adresa:document.getElementById('mf-a').value.trim(),idBroj:document.getElementById('mf-id').value.trim(),tel:document.getElementById('mf-t').value.trim(),email:document.getElementById('mf-e').value.trim(),osoba:document.getElementById('mf-o').value.trim()};window.FB.setDoc(window.FB.docRef('settings','mojaFirma'),data).then(()=>toast('✓ Sačuvano!')).catch(e=>toast('⚠ Greška: '+e.message));}
+async function dodajC(){const reg=document.getElementById('nc-reg').value.trim().toUpperCase(),voz=document.getElementById('nc-voz').value.trim();if(!reg){toast('Unesite registraciju!');return;}try{await window.FB.addDoc(window.FB.col('cistijerne'),{reg,vozac:voz});document.getElementById('nc-reg').value='';document.getElementById('nc-voz').value='';toast('✓ Cisterna dodana!');}catch(e){toast('⚠ Greška: '+e.message);}}
+async function dodajF(){const naziv=document.getElementById('nf-n').value.trim();if(!naziv){toast('Unesite naziv!');return;}try{await window.FB.addDoc(window.FB.col('firme'),{naziv,adr:document.getElementById('nf-a').value.trim()});document.getElementById('nf-n').value='';document.getElementById('nf-a').value='';toast('✓ Firma dodana!');}catch(e){toast('⚠ Greška: '+e.message);}}
+async function dodajG(){const naziv=document.getElementById('ng-n').value.trim();if(!naziv){toast('Unesite naziv!');return;}try{await window.FB.addDoc(window.FB.col('gradilista'),{naziv,lok:document.getElementById('ng-l').value.trim()});document.getElementById('ng-n').value='';document.getElementById('ng-l').value='';toast('✓ Gradilište dodano!');}catch(e){toast('⚠ Greška: '+e.message);}}
+async function dodajTL(){const naziv=document.getElementById('ntl-n').value.trim();if(!naziv){toast('Unesite naziv!');return;}try{await window.FB.addDoc(window.FB.col('treceLiceFirme'),{naziv});document.getElementById('ntl-n').value='';toast('✓ Treće lice dodano!');}catch(e){toast('⚠ Greška: '+e.message);}}
+async function obrisi(tp,id){const m={c:'cistijerne',f:'firme',g:'gradilista',tl:'treceLiceFirme'};try{await window.FB.deleteDoc(window.FB.docRef(m[tp],id));}catch(e){toast('⚠ Greška: '+e.message);}}
+function listItem(el,name,sub,id,tp){return`<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--bord)"><div><b>${name}</b>${sub?`<br><span style="font-size:11px;color:var(--mut2)">${sub}</span>`:''}</div><button class="btn btn-r" onclick="obrisi('${tp}','${id}')">✕</button></div>`;}
+function renderLists(){
+  document.getElementById('lst-c').innerHTML=S.cistijerne.map(c=>listItem(null,`<span style="font-family:monospace;color:var(--acc3)">${c.reg}</span>`,c.vozac,c.id,'c')).join('')||'<div style="color:var(--mut2);font-size:12px;padding:8px">Nema cistijerni</div>';
+  document.getElementById('lst-f').innerHTML=S.firme.map(f=>listItem(null,f.naziv,f.adr,f.id,'f')).join('')||'<div style="color:var(--mut2);font-size:12px;padding:8px">Nema firmi</div>';
+  document.getElementById('lst-g').innerHTML=S.gradilista.map(g=>listItem(null,g.naziv,g.lok?'📍 '+g.lok:'',g.id,'g')).join('')||'<div style="color:var(--mut2);font-size:12px;padding:8px">Nema gradilišta</div>';
+  document.getElementById('lst-tl').innerHTML=S.treceLiceFirme.map(f=>listItem(null,f.naziv,'',f.id,'tl')).join('')||'<div style="color:var(--mut2);font-size:12px;padding:8px">Nema trećih lica</div>';
+}
+
+// ═══════════════════════════════════════════════
+// FIREBASE: PRIJAVA + ŽIVA SINHRONIZACIJA
+// ═══════════════════════════════════════════════
+let currentUser=null; // {uid, username, role, puno_ime, vozilo_id}
+let allUsers=[];
+let unsubscribers=[];
+
+function renderAll(){
+  populateAll();populateTrecaFirme();renderLists();renderVozilaTbl();
+  renderDanas();renderTr();renderUl();renderTlLista();renderPregled();renderIzv();
+}
+
+async function doLogin(){
+  const u=document.getElementById('li-user').value.trim();
+  const p=document.getElementById('li-pass').value;
+  const err=document.getElementById('li-err');err.textContent='';
+  if(!u||!p){err.textContent='Unesite korisničko ime i lozinku.';return;}
+  document.getElementById('li-loading').style.display='block';
+  try{
+    await window.FB.login(u,p);
+    // onAuthChange listener dole preuzima dalje (učitavanje profila, prikaz aplikacije)
+  }catch(e){
+    document.getElementById('li-loading').style.display='none';
+    const map={'auth/invalid-credential':'Pogrešno korisničko ime ili lozinka.','auth/user-not-found':'Korisnik ne postoji.','auth/wrong-password':'Pogrešna lozinka.','auth/too-many-requests':'Previše pokušaja, sačekaj malo pa probaj ponovo.','auth/network-request-failed':'Nema internet konekcije.'};
+    err.textContent=map[e.code]||('Greška pri prijavi ('+e.code+')');
+  }
+}
+function doLogout(){
+  unsubscribers.forEach(u=>u&&u());unsubscribers=[];
+  window.FB.logout();
+}
+
+function startSync(){
+  const watch=(name,key)=>unsubscribers.push(window.FB.watchCollection(name,arr=>{S[key]=arr;renderAll();}));
+  watch('cistijerne','cistijerne');
+  watch('firme','firme');
+  watch('gradilista','gradilista');
+  watch('treceLiceFirme','treceLiceFirme');
+  watch('treceVozila','treceVozila');
+  watch('vozila','vozila');
+  watch('ulazi','ulazi');
+  watch('otpremnice','otpremnice');
+  watch('otpremnice3','otpremnice3');
+  watch('transferi','transferi');
+  unsubscribers.push(window.FB.watchDoc('settings/mojaFirma',data=>{
+    if(data) S.mojaFirma=data;
+    const el=document.getElementById('mf-n');
+    if(el&&document.getElementById('tab-postavke').classList.contains('active')) initPost();
+  }));
+  if(currentUser&&currentUser.role==='admin'){
+    unsubscribers.push(window.FB.watchCollection('users',arr=>{allUsers=arr;renderUsersList();}));
+  }
+}
+
+window.addEventListener('fb-ready',()=>{
+  window.FB.onAuthChange(async user=>{
+    if(user){
+      try{
+        const udoc=await window.FB.getUserDoc(user.uid);
+        if(!udoc){
+          document.getElementById('li-err').textContent='Nalog postoji ali nema profil u bazi. Kontaktiraj admina.';
+          document.getElementById('li-loading').style.display='none';
+          await window.FB.logout();
+          return;
+        }
+        currentUser={uid:user.uid,username:udoc.username,role:udoc.role,puno_ime:udoc.puno_ime,vozilo_id:udoc.vozilo_id};
+        document.getElementById('loginScreen').style.display='none';
+        document.getElementById('appRoot').style.display='block';
+        document.getElementById('ui-name').textContent=(udoc.role==='admin'?'👔 ':'🚛 ')+(udoc.puno_ime||udoc.username);
+        document.getElementById('otp-dat').value=today();
+        document.getElementById('tr-dat').value=nowDT();
+        document.getElementById('ul-dat').value=nowDT();
+        document.getElementById('tl-dat').value=today();
+        applyRole(udoc.role);
+        startSync();
+      }catch(e){
+        console.error(e);
+        document.getElementById('li-err').textContent='Greška pri učitavanju profila.';
+        document.getElementById('li-loading').style.display='none';
+      }
+    }else{
+      currentUser=null;
+      unsubscribers.forEach(u=>u&&u());unsubscribers=[];
+      document.getElementById('loginScreen').style.display='flex';
+      document.getElementById('appRoot').style.display='none';
+      document.getElementById('li-loading').style.display='none';
+      document.getElementById('li-pass').value='';
+    }
+  });
+});
+</script>
+</div><!-- /appRoot -->
+</body>
+</html>
