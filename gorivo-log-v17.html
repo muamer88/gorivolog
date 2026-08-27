@@ -1385,17 +1385,20 @@ function closeScanner(){
 }
 
 function onScanSuccess(decodedText){
-  let data;
-  try{ data=JSON.parse(decodedText); }
-  catch(e){ document.getElementById('qr-scan-err').textContent='⚠ Nepoznat QR kod (nije vozilo iz GorivoLog-a).'; return; }
-
-  if(!data||!data.id||!gV(data.id)){
+  const prefix='GORIVOLOG-VOZILO:';
+  if(!decodedText.startsWith(prefix)){
+    document.getElementById('qr-scan-err').textContent='⚠ Nepoznat QR kod (nije vozilo iz GorivoLog-a).';
+    return;
+  }
+  const reg=decodedText.slice(prefix.length);
+  const v=S.vozila.find(x=>x.reg===reg);
+  if(!v){
     document.getElementById('qr-scan-err').textContent='⚠ Vozilo nije pronađeno u bazi.';
     return;
   }
   closeScanner();
-  selectVeh(data.id);
-  toast('✓ Vozilo učitano skeniranjem: '+data.reg);
+  selectVeh(v.id);
+  toast('✓ Vozilo učitano skeniranjem: '+v.reg);
 }
 
 // Pronalazi zadnju poznatu kilometražu/moto sate za vozilo (gleda sve sačuvane otpremnice).
@@ -2648,7 +2651,7 @@ function showQR(id){
   setTimeout(()=>{
     const el=document.getElementById('qr-single');
     if(el&&typeof QRCode!=='undefined'){
-      new QRCode(el,{text:JSON.stringify({id:v.id,reg:v.reg,tip:v.tip}),width:200,height:200,colorDark:'#000000',colorLight:'#ffffff'});
+      new QRCode(el,{text:'GORIVOLOG-VOZILO:'+v.reg,width:200,height:200,colorDark:'#000000',colorLight:'#ffffff'});
     }else if(el){el.innerHTML='<p style="color:red;font-size:12px">QRCode biblioteka se učitava...</p>';}
   },200);
 }
@@ -2672,7 +2675,7 @@ function printAllQR(){
       div.appendChild(qrdiv);
       div.innerHTML+=`<div class="qr-item-reg">${v.reg}</div><div class="qr-item-sub">${tipL(v.tip)} · ${f?f.naziv:''}</div><div class="qr-item-sub">${v.vozac||''}</div>`;
       grid.appendChild(div);
-      if(typeof QRCode!=='undefined'){new QRCode(qrdiv,{text:JSON.stringify({id:v.id,reg:v.reg,tip:v.tip}),width:100,height:100,colorDark:'#000000',colorLight:'#ffffff'});}
+      if(typeof QRCode!=='undefined'){new QRCode(qrdiv,{text:'GORIVOLOG-VOZILO:'+v.reg,width:100,height:100,colorDark:'#000000',colorLight:'#ffffff'});}
       else{qrdiv.innerHTML='<div style="width:100px;height:100px;border:1px dashed #ccc;display:flex;align-items:center;justify-content:center;font-size:10px;color:#999">QR</div>';}
     });
   },300);
