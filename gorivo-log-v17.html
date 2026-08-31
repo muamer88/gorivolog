@@ -344,9 +344,10 @@ body.driver-mode .app{padding-bottom:78px}
 .rep-bar{height:100%;border-radius:2px}
 
 @media print{
-  body>*:not(#printModal){display:none!important}
+  #loginScreen{display:none!important}
+  #appRoot>*:not(#printModal){display:none!important}
   #printModal{display:flex!important;position:static;background:none}
-  #printModal .modal-box{width:100%;max-width:100%;box-shadow:none;border-radius:0;max-height:none}
+  #printModal .modal-box{width:100%;max-width:100%;box-shadow:none;border-radius:0;max-height:none;overflow-y:visible}
   .ptbar{display:none!important}
   .qr-grid{page-break-inside:auto}
   .qr-item{page-break-inside:avoid}
@@ -1250,13 +1251,13 @@ function renderMojaIstorija(){
     const g=gG(o.gradId);
     o.stavke.forEach(s=>{
       const v=gV(s.kamionId),f=v?gF(v.firmaId):null;
-      zapisi.push({datum:o.datum,vrijeme:s.vrijeme||'',kome:v?v.reg+(f?' — '+f.naziv:''):'?',gdje:g?g.naziv:'—',litara:s.litara,vrsta:'Sestrinska firma'});
+      zapisi.push({datum:o.datum,vrijeme:s.vrijeme||'',kome:v?v.reg+(f?' — '+f.naziv:''):'?',gdje:g?g.naziv:'—',litara:s.litara,vrsta:'Sestrinska firma',otpId:o.id,tip:'otpremnice',brojOtp:o.brojOtp});
     });
   });
   S.otpremnice3.filter(o=>o.cistijernId===cid && !o.stornirano).forEach(o=>{
     const f=S.treceLiceFirme.find(x=>x.id===o.treceLiceId);
     o.stavke.forEach(s=>{
-      zapisi.push({datum:o.datum,vrijeme:s.vrijeme||'',kome:s.reg+(f?' — '+f.naziv:''),gdje:'',litara:s.litara,vrsta:'Treće lice'});
+      zapisi.push({datum:o.datum,vrijeme:s.vrijeme||'',kome:s.reg+(f?' — '+f.naziv:''),gdje:'',litara:s.litara,vrsta:'Treće lice',otpId:o.id,tip:'otpremnice3',brojOtp:o.brojOtp});
     });
   });
   zapisi.sort((a,b)=>(b.datum+b.vrijeme).localeCompare(a.datum+a.vrijeme));
@@ -1264,11 +1265,14 @@ function renderMojaIstorija(){
   const ukupno=zapisi.reduce((a,z)=>a+z.litara,0);
   el.innerHTML=`<div style="margin-bottom:10px;font-size:13px;color:var(--mut2)">Ukupno u istoriji: <b style="color:var(--acc)">${ukupno.toLocaleString()} L</b> kroz ${zapisi.length} točenja</div>`+
     zapisi.map(z=>`<div style="padding:10px 0;border-bottom:1px solid var(--bord)">
-      <div style="display:flex;justify-content:space-between;align-items:center">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
         <span style="font-weight:700">${z.kome}</span>
-        <span class="tag t-l">${z.litara} L</span>
+        <div style="display:flex;align-items:center;gap:6px;white-space:nowrap">
+          <span class="tag t-l">${z.litara} L</span>
+          <button class="btn btn-s" style="padding:4px 9px;font-size:11px" onclick="${z.tip==='otpremnice3'?'printTreca':'printOtp'}('${z.otpId}')">🖨</button>
+        </div>
       </div>
-      <div style="font-size:11px;color:var(--mut2);margin-top:3px">${z.datum} ${z.vrijeme?'· 🕐 '+z.vrijeme:''} ${z.gdje?'· 📍 '+z.gdje:''} · <span class="tag ${z.vrsta==='Treće lice'?'t-b':'t-ok'}" style="font-size:10px">${z.vrsta}</span></div>
+      <div style="font-size:11px;color:var(--mut2);margin-top:3px">${z.brojOtp} · ${z.datum} ${z.vrijeme?'· 🕐 '+z.vrijeme:''} ${z.gdje?'· 📍 '+z.gdje:''} · <span class="tag ${z.vrsta==='Treće lice'?'t-b':'t-ok'}" style="font-size:10px">${z.vrsta}</span></div>
     </div>`).join('');
 }
 
@@ -1465,7 +1469,7 @@ function selectVeh(id){
   document.getElementById('e-km-zadnja').textContent = isB?'':hint;
   document.getElementById('e-ms-zadnja').textContent = isB?hint:'';
   document.getElementById('entry-form').style.display='block';
-  document.getElementById('e-lit').focus();
+  document.getElementById(isB?'e-ms':'e-km').focus();
   sigs.entry=null;
   document.getElementById('e-sig-p').innerHTML='<span style="color:var(--mut2);font-size:12px">👆 Dodirni za potpis</span>';
 }
