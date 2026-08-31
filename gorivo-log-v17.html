@@ -346,8 +346,8 @@ body.driver-mode .app{padding-bottom:78px}
 @media print{
   #loginScreen{display:none!important}
   #appRoot>*:not(#printModal){display:none!important}
-  #printModal{display:flex!important;position:static;background:none}
-  #printModal .modal-box{width:100%;max-width:100%;box-shadow:none;border-radius:0;max-height:none;overflow-y:visible}
+  #printModal{display:flex!important;position:static;background:none;align-items:flex-start!important;justify-content:flex-start!important;min-height:0!important;height:auto!important}
+  #printModal .modal-box{width:100%;max-width:100%;box-shadow:none;border-radius:0;max-height:none;overflow-y:visible;margin:0}
   .ptbar{display:none!important}
   .qr-grid{page-break-inside:auto}
   .qr-item{page-break-inside:avoid}
@@ -1469,7 +1469,7 @@ function selectVeh(id){
   document.getElementById('e-km-zadnja').textContent = isB?'':hint;
   document.getElementById('e-ms-zadnja').textContent = isB?hint:'';
   document.getElementById('entry-form').style.display='block';
-  document.getElementById(isB?'e-ms':'e-km').focus();
+  setTimeout(()=>{ document.getElementById(isB?'e-ms':'e-km').focus(); }, 50);
   sigs.entry=null;
   document.getElementById('e-sig-p').innerHTML='<span style="color:var(--mut2);font-size:12px">👆 Dodirni za potpis</span>';
 }
