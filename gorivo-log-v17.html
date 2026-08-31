@@ -292,29 +292,29 @@ td.mono{font-family:monospace;font-size:12px}
 .ptbar{padding:10px 14px;border-bottom:1px solid var(--bord);display:flex;gap:8px;align-items:center}
 
 /* OTPREMNICA PRINT */
-.otp{font-family:Arial,sans-serif;font-size:10.5px;padding:10px 16px;color:#000}
-.otp-top{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #000;padding-bottom:5px;margin-bottom:6px}
+.otp{font-family:Arial,sans-serif;font-size:10.5px;padding:7px 14px;color:#000}
+.otp-top{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #000;padding-bottom:4px;margin-bottom:4px}
 .otp-co strong{font-size:12px;display:block;margin-bottom:0}
-.otp-co{font-size:9px;color:#444;line-height:1.35}
-.otp-ttl{font-size:17px;font-weight:900;letter-spacing:1.5px;text-align:right}
-.otp-meta{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;border:1px solid #000;margin-bottom:5px}
-.otp-mb{padding:4px 7px;border-right:1px solid #ccc}
+.otp-co{font-size:9px;color:#444;line-height:1.25}
+.otp-ttl{font-size:16px;font-weight:900;letter-spacing:1.5px;text-align:right}
+.otp-meta{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;border:1px solid #000;margin-bottom:4px}
+.otp-mb{padding:3px 7px;border-right:1px solid #ccc}
 .otp-mb:last-child{border-right:none}
 .otp-ml{font-size:7px;text-transform:uppercase;letter-spacing:1px;color:#888;margin-bottom:0}
 .otp-mv{font-size:10px;font-weight:700}
 .otp-ms{font-size:8px;color:#555;margin-top:0}
-.otp table{width:100%;border-collapse:collapse;margin-bottom:5px;font-size:9.5px}
+.otp table{width:100%;border-collapse:collapse;margin-bottom:3px;font-size:9.5px}
 .otp table thead{display:table-header-group}
 .otp table tr{page-break-inside:avoid;break-inside:avoid}
-.otp table th{background:#000;color:#fff;padding:4px 6px;text-align:left;font-size:8px;letter-spacing:.4px}
-.otp table td{padding:3px 6px;border-bottom:1px solid #e0e0e0}
+.otp table th{background:#000;color:#fff;padding:3px 6px;text-align:left;font-size:8px;letter-spacing:.4px}
+.otp table td{padding:1.5px 6px;border-bottom:1px solid #e0e0e0}
 .otp table tr:nth-child(even) td{background:#f8f8f8}
-.otp-sigs{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-top:5px;page-break-inside:avoid}
-.otp-sig{border-top:1px solid #000;padding-top:3px}
+.otp-sigs{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-top:4px;page-break-inside:avoid}
+.otp-sig{border-top:1px solid #000;padding-top:2px}
 .otp-sig-lbl{font-size:7px;text-transform:uppercase;letter-spacing:1px;color:#777}
-.otp-sig-line{height:22px;border-bottom:1px dashed #ccc;margin:3px 0 2px}
+.otp-sig-line{height:20px;border-bottom:1px dashed #ccc;margin:2px 0 1px}
 .otp-sig-nm{font-size:9px;color:#333}
-.otp-foot{font-size:7.5px;color:#bbb;border-top:1px solid #eee;padding-top:3px;margin-top:4px;display:flex;justify-content:space-between;page-break-inside:avoid}
+.otp-foot{font-size:7px;color:#bbb;border-top:1px solid #eee;padding-top:2px;margin-top:3px;display:flex;justify-content:space-between;page-break-inside:avoid}
 .receipt{font-family:'Courier New',monospace;font-size:12px;color:#000;width:280px;margin:0 auto;padding:8px 4px;line-height:1.35}
 .receipt b{font-weight:800}
 
@@ -1907,7 +1907,7 @@ function printTreca(id,obj){
       <div class="otp-mb"><div class="otp-ml">Datum</div><div class="otp-mv">${o.datum}</div><div class="otp-ms">${o.stavke.length} stavki</div></div>
     </div>
     <table><thead>
-    <tr><th colspan="7" style="background:#333;font-size:8.5px;letter-spacing:.3px">OTPREMNICA — TREĆE LICE  ·  Br: ${o.brojOtp}  ·  ${f?f.naziv:'?'}  ·  ${o.datum}</th></tr>
+    <tr><th colspan="7" style="background:#333;font-size:7px;letter-spacing:.3px;padding:1.5px 6px">OTPREMNICA — TREĆE LICE  ·  Br: ${o.brojOtp}  ·  ${f?f.naziv:'?'}  ·  ${o.datum}</th></tr>
     <tr><th>R.br.</th><th>Ime i prezime vozača</th><th>Registracija</th><th>Vrijeme</th><th>Napomena</th><th style="text-align:right">Litara</th><th>Potpis</th></tr></thead>
     <tbody>${rows}<tr style="background:#f0f0f0;font-weight:700"><td colspan="5" style="text-align:right;font-size:10px">UKUPNO:</td><td style="font-family:monospace;font-size:13px;text-align:right">${ukL} L</td><td></td></tr></tbody></table>
     <div class="otp-sigs">
@@ -2883,7 +2883,7 @@ function printOtp(id,obj){
       <div class="otp-mb"><div class="otp-ml">Datum</div><div class="otp-mv">${o.datum}</div><div class="otp-ms">${o.stavke.length} vozila</div></div>
     </div>
     <table><thead>
-    <tr><th colspan="8" style="background:#333;font-size:8.5px;letter-spacing:.3px">OTPREMNICA  ·  Br: ${o.brojOtp}  ·  ${mf.naziv||'?'}  ·  ${o.datum}</th></tr>
+    <tr><th colspan="8" style="background:#333;font-size:7px;letter-spacing:.3px;padding:1.5px 6px">OTPREMNICA  ·  Br: ${o.brojOtp}  ·  ${mf.naziv||'?'}  ·  ${o.datum}</th></tr>
     <tr><th>R.br.</th><th>Ime i prezime vozača</th><th>Registracija</th><th>Model</th><th>KM / Moto sati</th><th>Vrijeme</th><th style="text-align:right">Litara</th><th>Potpis</th></tr></thead>
     <tbody>${rows}<tr style="background:#f0f0f0;font-weight:700"><td colspan="6" style="text-align:right;font-size:10px">UKUPNO:</td><td style="font-family:monospace;font-size:13px;text-align:right">${ukL} L</td><td></td></tr></tbody></table>
     <div class="otp-sigs">
