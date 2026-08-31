@@ -891,10 +891,31 @@ body.driver-mode .app{padding-bottom:78px}
     <button class="btn btn-s" onclick="guardedClick(this,generisiTestnuOtpremnicu)">🧪 Generiši testnu otpremnicu</button>
   </div>
 
+  <div class="card" style="border-color:rgba(240,160,32,.3)">
+    <div class="card-title" style="color:var(--acc2)">🔄 Reset samo podataka o gorivu</div>
+    <div class="signal sig-tip">Briše SAMO transakcione podatke: otpremnice, treća lica, ulaze i transfere. Zadržava sve matične podatke — vozila, firme, cisterne, gradilišta, korisnike i postavke. Koristi ovo ako se stanje "zapetljalo" pa hoćeš čist početak evidencije goriva, bez ponovnog unosa matičnih podataka.</div>
+    <button class="btn btn-s" style="border-color:var(--acc2);color:var(--acc2)" onclick="openMekiResetModal()">🔄 Resetuj samo gorivo/otpremnice</button>
+  </div>
+
   <div class="card" style="border-color:rgba(240,74,74,.3)">
     <div class="card-title" style="color:var(--red)">⚠️ Opasna zona</div>
     <div class="signal sig-warn">Reset briše SVE podatke (otpremnice, vozila, firme, ulaze, transfere...) sa ovog uređaja, bez mogućnosti povrata. Koristi samo ako stvarno želiš da počneš iz početka.</div>
     <button class="btn btn-r" onclick="openResetModal()">🗑 Resetuj cijeli sistem</button>
+  </div>
+</div>
+
+<!-- ═══ MEKI RESET MODAL ═══ -->
+<div class="modal" id="mekiResetModal">
+  <div class="modal-box">
+    <div class="modal-head"><h3 style="color:var(--acc2)">🔄 Potvrda reseta goriva/otpremnica</h3><button class="btn btn-r" onclick="closeModal('mekiResetModal')">✕</button></div>
+    <div class="modal-body">
+      <p style="font-size:13px;color:var(--mut2);margin-bottom:8px">Ovo će trajno obrisati: <b>sve otpremnice (glavne i treća lica), sve ulaze goriva, sve transfere</b>.</p>
+      <p style="font-size:13px;color:var(--acc);margin-bottom:12px">✓ OSTAJU netaknuti: vozila, firme, cisterne, gradilišta, treća lica (lista), korisnici, postavke firme, lista goriva.</p>
+      <div class="fg full"><label>Da potvrdiš, upiši riječ <b>RESETUJ</b> ispod:</label><input id="meki-reset-confirm-txt" placeholder="RESETUJ"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-r" id="meki-reset-confirm-btn" onclick="izvrsiMekiReset()">🔄 Da, obriši samo gorivo/otpremnice</button>
+    </div>
   </div>
 </div>
 
@@ -2941,6 +2962,27 @@ document.querySelectorAll('.modal').forEach(m=>{m.addEventListener('click',e=>{i
 // POSTAVKE
 // ═══════════════════════════════════════════════
 // ═══ RESET SISTEMA ═══
+function openMekiResetModal(){
+  document.getElementById('meki-reset-confirm-txt').value='';
+  openModal('mekiResetModal');
+}
+async function izvrsiMekiReset(){
+  const txt=document.getElementById('meki-reset-confirm-txt').value.trim().toUpperCase();
+  if(txt!=='RESETUJ'){toast('⚠ Upišite tačno "RESETUJ" da potvrdite.');return;}
+  const btn=document.getElementById('meki-reset-confirm-btn');
+  if(btn){btn.disabled=true;btn.textContent='Brišem...';}
+  logAkcija('MEKI RESET (gorivo/otpremnice)', 'Obrisao/la '+(currentUser?currentUser.username:'?')+' — vozila/firme/cisterne/gradilišta ostali netaknuti');
+  try{
+    const kolekcije=['otpremnice','otpremnice3','ulazi','transferi'];
+    for(const k of kolekcije){ await window.FB.wipeCollection(k); }
+    toast('✓ Podaci o gorivu/otpremnicama resetovani. Matični podaci (vozila, firme, cisterne...) su ostali netaknuti.',5000);
+    setTimeout(()=>location.reload(),1200);
+  }catch(e){
+    toast('⚠ Greška pri resetu: '+e.message,5000);
+    if(btn){btn.disabled=false;btn.textContent='🔄 Da, obriši samo gorivo/otpremnice';}
+  }
+}
+
 function openResetModal(){
   document.getElementById('reset-confirm-txt').value='';
   openModal('resetModal');
