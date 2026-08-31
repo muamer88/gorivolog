@@ -309,12 +309,12 @@ td.mono{font-family:monospace;font-size:12px}
 .otp table th{background:#000;color:#fff;padding:4px 6px;text-align:left;font-size:8px;letter-spacing:.4px}
 .otp table td{padding:3px 6px;border-bottom:1px solid #e0e0e0}
 .otp table tr:nth-child(even) td{background:#f8f8f8}
-.otp-sigs{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-top:8px}
-.otp-sig{border-top:1px solid #000;padding-top:5px}
+.otp-sigs{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-top:5px;page-break-inside:avoid}
+.otp-sig{border-top:1px solid #000;padding-top:3px}
 .otp-sig-lbl{font-size:7px;text-transform:uppercase;letter-spacing:1px;color:#777}
-.otp-sig-line{height:26px;border-bottom:1px dashed #ccc;margin:4px 0 2px}
+.otp-sig-line{height:22px;border-bottom:1px dashed #ccc;margin:3px 0 2px}
 .otp-sig-nm{font-size:9px;color:#333}
-.otp-foot{font-size:7.5px;color:#bbb;border-top:1px solid #eee;padding-top:3px;margin-top:6px;display:flex;justify-content:space-between}
+.otp-foot{font-size:7.5px;color:#bbb;border-top:1px solid #eee;padding-top:3px;margin-top:4px;display:flex;justify-content:space-between;page-break-inside:avoid}
 .receipt{font-family:'Courier New',monospace;font-size:12px;color:#000;width:280px;margin:0 auto;padding:8px 4px;line-height:1.35}
 .receipt b{font-weight:800}
 
@@ -345,6 +345,7 @@ body.driver-mode .app{padding-bottom:78px}
 .rep-bar-wrap{height:4px;background:var(--bord2);border-radius:2px;margin-top:6px}
 .rep-bar{height:100%;border-radius:2px}
 
+@page{size:A4;margin:9mm 11mm}
 @media print{
   #loginScreen{display:none!important}
   #appRoot>*:not(#printModal){display:none!important}
@@ -1905,7 +1906,9 @@ function printTreca(id,obj){
       <div class="otp-mb"><div class="otp-ml">Gorivo</div><div class="otp-mv">${o.gorivo}</div></div>
       <div class="otp-mb"><div class="otp-ml">Datum</div><div class="otp-mv">${o.datum}</div><div class="otp-ms">${o.stavke.length} stavki</div></div>
     </div>
-    <table><thead><tr><th>R.br.</th><th>Ime i prezime vozača</th><th>Registracija</th><th>Vrijeme</th><th>Napomena</th><th style="text-align:right">Litara</th><th>Potpis</th></tr></thead>
+    <table><thead>
+    <tr><th colspan="7" style="background:#333;font-size:8.5px;letter-spacing:.3px">OTPREMNICA — TREĆE LICE  ·  Br: ${o.brojOtp}  ·  ${f?f.naziv:'?'}  ·  ${o.datum}</th></tr>
+    <tr><th>R.br.</th><th>Ime i prezime vozača</th><th>Registracija</th><th>Vrijeme</th><th>Napomena</th><th style="text-align:right">Litara</th><th>Potpis</th></tr></thead>
     <tbody>${rows}<tr style="background:#f0f0f0;font-weight:700"><td colspan="5" style="text-align:right;font-size:10px">UKUPNO:</td><td style="font-family:monospace;font-size:13px;text-align:right">${ukL} L</td><td></td></tr></tbody></table>
     <div class="otp-sigs">
       <div class="otp-sig"><div class="otp-sig-lbl">Vozač cistijerne</div><div class="otp-sig-line"></div><div class="otp-sig-nm">${c?c.vozac:''}</div></div>
@@ -2879,7 +2882,9 @@ function printOtp(id,obj){
       <div class="otp-mb"><div class="otp-ml">Gorivo</div><div class="otp-mv">${o.gorivo}</div></div>
       <div class="otp-mb"><div class="otp-ml">Datum</div><div class="otp-mv">${o.datum}</div><div class="otp-ms">${o.stavke.length} vozila</div></div>
     </div>
-    <table><thead><tr><th>R.br.</th><th>Ime i prezime vozača</th><th>Registracija</th><th>Model</th><th>KM / Moto sati</th><th>Vrijeme</th><th style="text-align:right">Litara</th><th>Potpis</th></tr></thead>
+    <table><thead>
+    <tr><th colspan="8" style="background:#333;font-size:8.5px;letter-spacing:.3px">OTPREMNICA  ·  Br: ${o.brojOtp}  ·  ${mf.naziv||'?'}  ·  ${o.datum}</th></tr>
+    <tr><th>R.br.</th><th>Ime i prezime vozača</th><th>Registracija</th><th>Model</th><th>KM / Moto sati</th><th>Vrijeme</th><th style="text-align:right">Litara</th><th>Potpis</th></tr></thead>
     <tbody>${rows}<tr style="background:#f0f0f0;font-weight:700"><td colspan="6" style="text-align:right;font-size:10px">UKUPNO:</td><td style="font-family:monospace;font-size:13px;text-align:right">${ukL} L</td><td></td></tr></tbody></table>
     <div class="otp-sigs">
       <div class="otp-sig"><div class="otp-sig-lbl">Vozač cistijerne</div><div class="otp-sig-line"></div><div class="otp-sig-nm">${c?c.vozac:''}</div></div>
