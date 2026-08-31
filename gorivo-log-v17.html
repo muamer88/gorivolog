@@ -313,6 +313,8 @@ td.mono{font-family:monospace;font-size:12px}
 .otp-sig-line{height:32px;border-bottom:1px dashed #ccc;margin:5px 0 3px}
 .otp-sig-nm{font-size:9.5px;color:#333}
 .otp-foot{font-size:7.5px;color:#bbb;border-top:1px solid #eee;padding-top:4px;margin-top:8px;display:flex;justify-content:space-between}
+.receipt{font-family:'Courier New',monospace;font-size:12px;color:#000;width:280px;margin:0 auto;padding:8px 4px;line-height:1.35}
+.receipt b{font-weight:800}
 
 /* DRIVER (VOZAČ) MODE */
 .driver-screen{display:flex;flex-direction:column;gap:14px}
@@ -1024,6 +1026,7 @@ body.driver-mode .app{padding-bottom:78px}
   <div class="modal-box" style="width:min(800px,98vw);max-height:97vh">
     <div class="ptbar">
       <span style="color:var(--mut2);font-size:12px;margin-right:auto" id="print-title">Otpremnica</span>
+      <button class="btn btn-s" id="print-receipt-btn" style="display:none;padding:6px 13px;font-size:12px" onclick="prebaciNaUskiFormat()">🧾 Uska traka</button>
       <button class="btn btn-pr" onclick="window.print()">🖨 Štampaj / PDF</button>
       <button class="btn btn-s" style="padding:6px 13px;font-size:12px" onclick="closeModal('printModal')">✕</button>
     </div>
@@ -1796,6 +1799,11 @@ function renderTlLista(){
 
 function printTreca(id,obj){
   const o=obj||S.otpremnice3.find(x=>x.id===id);if(!o)return;
+  window._printSource={tip:'otpremnice3',obj:o};
+  document.getElementById('print-receipt-btn').style.display='inline-block';
+  document.getElementById('print-receipt-btn').textContent='🧾 Uska traka';
+  document.getElementById('print-receipt-btn').onclick=prebaciNaUskiFormat;
+  const rsTag=document.getElementById('receiptPageStyle');if(rsTag)rsTag.textContent='';
   const c=gC(o.cistijernId),f=S.treceLiceFirme.find(x=>x.id===o.treceLiceId),mf=S.mojaFirma;
   const ukL=o.stavke.reduce((a,s)=>a+s.litara,0);
   const rows=o.stavke.map((s,i)=>`<tr>
@@ -1829,6 +1837,77 @@ function printTreca(id,obj){
     <div class="otp-foot"><span>${mf.naziv||''} | ${mf.adresa||''}</span><span>${o.brojOtp} | ${o.datum} | GorivoLog v4</span></div>
   </div>`;
   openModal('printModal');
+}
+
+// ═══ USKI FORMAT (za mali/prenosivi printer u kabini) ═══
+function renderReceiptHTML(o, tip){
+  const mf=S.mojaFirma;
+  const ukL=o.stavke.reduce((a,s)=>a+s.litara,0);
+  if(tip==='otpremnice3'){
+    const c=gC(o.cistijernId),f=S.treceLiceFirme.find(x=>x.id===o.treceLiceId);
+    const stavke=o.stavke.map(s=>`<div style="border-top:1px dashed #000;padding:5px 0">
+      <div><b>${s.reg}</b> — ${s.vozac||'—'}</div>
+      <div>${s.vrijeme?'🕐 '+s.vrijeme:''}${s.napomena?' · '+s.napomena:''}</div>
+      <div>Litara: <b>${s.litara} L</b></div>
+      ${s.sig?`<div style="margin-top:3px">Potpis:<br><img src="${s.sig}" style="height:36px;background:#fff"></div>`:'<div style="color:#900">Bez potpisa!</div>'}
+    </div>`).join('');
+    return `<div class="receipt">
+      <div style="text-align:center;font-weight:800;font-size:13px">${mf.naziv||'GorivoLog'}</div>
+      ${mf.adresa?`<div style="text-align:center;font-size:10px">${mf.adresa}</div>`:''}
+      ${mf.tel?`<div style="text-align:center;font-size:10px">Tel: ${mf.tel}</div>`:''}
+      <div style="border-top:1px solid #000;margin:8px 0"></div>
+      <div style="text-align:center;font-weight:800">OTPREMNICA — TREĆE LICE</div>
+      <div>Br: <b>${o.brojOtp}</b></div>
+      <div>Datum: ${o.datum}</div>
+      <div>Cisterna: ${c?c.reg:'?'} (${c?c.vozac:''})</div>
+      <div>Firma primalac: <b>${f?f.naziv:'?'}</b></div>
+      <div>Gorivo: ${o.gorivo}</div>
+      ${stavke}
+      <div style="border-top:1px solid #000;margin-top:8px;padding-top:5px;font-weight:800;font-size:14px">UKUPNO: ${ukL} L</div>
+      <div style="text-align:center;font-size:9px;margin-top:12px">${o.brojOtp} · ${o.datum}<br>GorivoLog</div>
+    </div>`;
+  }else{
+    const c=gC(o.cistijernId),g=gG(o.gradId);
+    const stavke=o.stavke.map(s=>{
+      const v=gV(s.kamionId),isB=v&&v.tip==='bager';
+      return `<div style="border-top:1px dashed #000;padding:5px 0">
+      <div><b>${v?v.reg:'?'}</b> — ${s.vozacIme||'—'}</div>
+      <div>${s.vrijeme?'🕐 '+s.vrijeme:''} · ${formatMjerilo(s,isB)}</div>
+      <div>Litara: <b>${s.litara} L</b></div>
+      ${s.sig?`<div style="margin-top:3px">Potpis:<br><img src="${s.sig}" style="height:36px;background:#fff"></div>`:'<div style="color:#900">Bez potpisa!</div>'}
+    </div>`;}).join('');
+    return `<div class="receipt">
+      <div style="text-align:center;font-weight:800;font-size:13px">${mf.naziv||'GorivoLog'}</div>
+      ${mf.adresa?`<div style="text-align:center;font-size:10px">${mf.adresa}</div>`:''}
+      ${mf.tel?`<div style="text-align:center;font-size:10px">Tel: ${mf.tel}</div>`:''}
+      <div style="border-top:1px solid #000;margin:8px 0"></div>
+      <div style="text-align:center;font-weight:800">OTPREMNICA</div>
+      <div>Br: <b>${o.brojOtp}</b></div>
+      <div>Datum: ${o.datum}</div>
+      <div>Cisterna: ${c?c.reg:'?'}</div>
+      <div>Gradilište: ${g?g.naziv:'?'}</div>
+      <div>Gorivo: ${o.gorivo}</div>
+      ${stavke}
+      <div style="border-top:1px solid #000;margin-top:8px;padding-top:5px;font-weight:800;font-size:14px">UKUPNO: ${ukL} L</div>
+      <div style="text-align:center;font-size:9px;margin-top:12px">${o.brojOtp} · ${o.datum}<br>GorivoLog</div>
+    </div>`;
+  }
+}
+
+function prebaciNaUskiFormat(){
+  const src=window._printSource;if(!src)return;
+  document.getElementById('print-body').innerHTML=renderReceiptHTML(src.obj,src.tip);
+  let styleTag=document.getElementById('receiptPageStyle');
+  if(!styleTag){styleTag=document.createElement('style');styleTag.id='receiptPageStyle';document.head.appendChild(styleTag);}
+  styleTag.textContent='@page{size:80mm auto;margin:3mm}';
+  const btn=document.getElementById('print-receipt-btn');
+  btn.textContent='📄 Nazad na A4';
+  btn.onclick=vratiNaA4Format;
+}
+function vratiNaA4Format(){
+  const src=window._printSource;if(!src)return;
+  const styleTag=document.getElementById('receiptPageStyle');if(styleTag)styleTag.textContent='';
+  if(src.tip==='otpremnice3') printTreca(src.obj.id,src.obj); else printOtp(src.obj.id,src.obj);
 }
 
 // ═══ TRANSFER ═══
@@ -1959,6 +2038,7 @@ function prikaziPotrosnjuSerije(ulazId){
       <tbody>${potrosnja.length?potrosnja.map(p=>`<tr><td>${(p.datum||'').replace('T',' ')}</td><td>${p.vrsta}</td><td>${p.ko||'—'}</td><td>${p.litara}L</td></tr>`).join(''):'<tr><td colspan="4" style="text-align:center;color:#999">Još ništa nije potrošeno iz ove serije</td></tr>'}</tbody>
     </table>
   </div>`;
+  document.getElementById('print-receipt-btn').style.display='none';
   openModal('printModal');
 }
 
@@ -2647,6 +2727,7 @@ function showQR(id){
       <div id="qr-single" style="display:inline-block;margin-bottom:16px"></div>
       <p style="font-size:11px;color:#888">Skeniraj za unos točenja</p>
     </div>`;
+  document.getElementById('print-receipt-btn').style.display='none';
   openModal('printModal');
   setTimeout(()=>{
     const el=document.getElementById('qr-single');
@@ -2664,6 +2745,7 @@ function printAllQR(){
       <h3 style="font-size:16px;margin-bottom:12px;border-bottom:2px solid #000;padding-bottom:6px">QR kodovi vozila — GorivoLog</h3>
       <div class="qr-grid" id="qr-all-grid"></div>
     </div>`;
+  document.getElementById('print-receipt-btn').style.display='none';
   openModal('printModal');
   setTimeout(()=>{
     const grid=document.getElementById('qr-all-grid');
@@ -2686,6 +2768,11 @@ function printAllQR(){
 // ═══════════════════════════════════════════════
 function printOtp(id,obj){
   const o=obj||S.otpremnice.find(x=>x.id===id);if(!o)return;
+  window._printSource={tip:'otpremnice',obj:o};
+  document.getElementById('print-receipt-btn').style.display='inline-block';
+  document.getElementById('print-receipt-btn').textContent='🧾 Uska traka';
+  document.getElementById('print-receipt-btn').onclick=prebaciNaUskiFormat;
+  const rsTag=document.getElementById('receiptPageStyle');if(rsTag)rsTag.textContent='';
   const c=gC(o.cistijernId),g=gG(o.gradId),mf=S.mojaFirma;
   const ukL=o.stavke.reduce((a,s)=>a+s.litara,0);
   const rows=o.stavke.map((s,i)=>{
