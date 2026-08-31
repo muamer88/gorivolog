@@ -883,6 +883,13 @@ body.driver-mode .app{padding-bottom:78px}
     <div class="tw"><table><thead><tr><th>Kada</th><th>Ko</th><th>Radnja</th><th>Detalji</th></tr></thead><tbody id="lst-auditlog"><tr><td colspan="4" style="text-align:center;color:var(--mut2)">Učitavanje...</td></tr></tbody></table></div>
   </div>
 
+  <div class="card admin-only">
+    <div class="card-title">🧪 Alati za testiranje</div>
+    <div class="signal sig-tip">Generiše PRAVU otpremnicu (stvarno se sačuva u bazi) koristeći postojeća vozila, sa probnim potpisima i razmaknutim kilometrima — korisno za provjeru izgleda/štampe kad ima puno stavki.</div>
+    <div class="fg"><label>Broj stavki (vozila)</label><input type="number" id="test-broj-stavki" value="15" min="1" max="50"></div>
+    <button class="btn btn-s" onclick="guardedClick(this,generisiTestnuOtpremnicu)">🧪 Generiši testnu otpremnicu</button>
+  </div>
+
   <div class="card" style="border-color:rgba(240,74,74,.3)">
     <div class="card-title" style="color:var(--red)">⚠️ Opasna zona</div>
     <div class="signal sig-warn">Reset briše SVE podatke (otpremnice, vozila, firme, ulaze, transfere...) sa ovog uređaja, bez mogućnosti povrata. Koristi samo ako stvarno želiš da počneš iz početka.</div>
@@ -1548,6 +1555,71 @@ function renderStavke(){
     <div class="admin-only" style="font-size:11px;color:var(--acc4);margin-top:4px">📦 ${opisAlokacije(s.izvorUlaza)}</div>
     </div>`;
   }).join('');
+}
+
+// ═══ TEST ALAT — generiše pravu otpremnicu sa postojećim vozilima, za provjeru izgleda/štampe ═══
+function generisiTestniPotpis(seed){
+  const canvas=document.createElement('canvas');
+  canvas.width=300;canvas.height=100;
+  const ctx=canvas.getContext('2d');
+  ctx.fillStyle='#fff';ctx.fillRect(0,0,300,100);
+  ctx.strokeStyle='#1a3a8f';ctx.lineWidth=2.5;ctx.lineCap='round';ctx.beginPath();
+  const rnd=(n)=>Math.sin(seed*12.9898+n*78.233)*43758.5453%1;
+  let x=20,y=60;ctx.moveTo(x,y);
+  for(let i=0;i<14;i++){
+    x+=18+Math.abs(rnd(i))*8;
+    y=50+Math.abs(rnd(i+50))*30*(i%2?1:-1);
+    ctx.lineTo(x,y);
+  }
+  ctx.stroke();
+  return canvas.toDataURL('image/png');
+}
+
+async function generisiTestnuOtpremnicu(){
+  const brojZeljenih=Math.max(1,Math.min(50,parseInt(document.getElementById('test-broj-stavki').value)||15));
+  if(!S.vozila.length){toast('⚠ Nema vozila u bazi — dodaj bar jedno prije testa.');return;}
+  if(!S.cistijerne.length){toast('⚠ Nema cisterni u bazi.');return;}
+  if(!S.gradilista.length){toast('⚠ Nema gradilišta u bazi — dodaj bar jedno prije testa.');return;}
+
+  // Odaberi cisternu sa najviše raspoloživog goriva
+  const cisterna=[...S.cistijerne].sort((a,b)=>cisternaStanje(b.id)-cisternaStanje(a.id))[0];
+  const dostupno=raspolozivoLitara(cisterna.id);
+  if(dostupno<brojZeljenih*10){
+    toast(`⚠ Cisterna ${cisterna.reg} ima samo ${dostupno.toFixed(0)}L raspoloživo — premalo za ${brojZeljenih} stavki. Dodaj ulaz goriva prije testa.`,5000);
+    return;
+  }
+
+  // Grupiši vozila po firmi, uzmi najveću grupu (da se otpremnica ne razdijeli automatski po firmama)
+  const grupe={};
+  S.vozila.forEach(v=>{ (grupe[v.firmaId||'_bez']=grupe[v.firmaId||'_bez']||[]).push(v); });
+  const najvecaGrupa=Object.values(grupe).sort((a,b)=>b.length-a.length)[0];
+  const vozilaZaTest=[];
+  for(let i=0;i<brojZeljenih;i++) vozilaZaTest.push(najvecaGrupa[i%najvecaGrupa.length]);
+
+  const gradiliste=S.gradilista[0];
+  const litraPoStavci=Math.min(300, Math.floor(dostupno/brojZeljenih*0.9));
+
+  curOtp={id:null,datum:today(),brojOtp:autoBroj('TEST'),cistijernId:cisterna.id,gradId:gradiliste.id,gorivo:(S.vrstaGoriva&&S.vrstaGoriva[0])||'Dizel',stavke:[]};
+
+  const sada=new Date();
+  vozilaZaTest.forEach((v,i)=>{
+    const isB=v.tip==='bager';
+    const zadnja=zadnjaKilometraza(v.id,isB);
+    const val=(zadnja!=null?zadnja:(isB?3000:80000)) + (i+1)*(150+Math.floor(Math.abs(Math.sin(i*3.7))*350));
+    const vrijeme=new Date(sada.getTime()-(brojZeljenih-i)*4*60000).toTimeString().slice(0,5);
+    curOtp.stavke.push({
+      id:'s'+uid(), kamionId:v.id,
+      vozacIme:v.vozac||'Test Vozač '+(i+1),
+      km:isB?null:val, motoSati:isB?val:null,
+      litara:litraPoStavci,
+      sig:generisiTestniPotpis(i+1),
+      vrijeme,
+      izvorUlaza:fifoAlociraj(cisterna.id,litraPoStavci)
+    });
+  });
+
+  toast(`Generisano ${brojZeljenih} stavki, čuvam...`,2000);
+  await zatvoriOtp();
 }
 
 async function zatvoriOtp(){
