@@ -26,7 +26,7 @@
     getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, createUserWithEmailAndPassword
   } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
   import {
-    getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
+    getFirestore, initializeFirestore, persistentLocalCache,
     collection, doc, setDoc, addDoc, updateDoc, deleteDoc, onSnapshot, increment, serverTimestamp, getDoc, runTransaction, writeBatch, getDocs
   } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 
@@ -44,10 +44,23 @@
   const app = initializeApp(firebaseConfig);
   const auth = getAuth(app);
   const db = initializeFirestore(app, {
-    localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() })
+    localCache: persistentLocalCache({})
   });
 
   function toEmail(username){ return username.trim().toLowerCase().replace(/\s+/g,'')+'@'+FAKE_EMAIL_DOMAIN; }
+
+  // Sprječava da bilo koja operacija ka bazi "visi" beskonačno (npr. ako je uređaj offline
+  // a keš iz nekog razloga ne odgovori) - nakon 12 sekundi baca jasnu grešku umjesto vječnog čekanja.
+  function withTimeout(promise, label){
+    return Promise.race([
+      promise,
+      new Promise((_,reject)=>setTimeout(()=>reject(new Error(`Predugo traje (${label}) — provjeri internet konekciju i probaj ponovo.`)), 12000))
+    ]);
+  }
+  const addDocSafe=(...args)=>withTimeout(addDoc(...args),'dodavanje');
+  const setDocSafe=(...args)=>withTimeout(setDoc(...args),'čuvanje');
+  const updateDocSafe=(...args)=>withTimeout(updateDoc(...args),'ažuriranje');
+  const deleteDocSafe=(...args)=>withTimeout(deleteDoc(...args),'brisanje');
 
   window.FB = {
     auth, db,
@@ -80,7 +93,7 @@
     // Generička kolekcija: subscribe = live sinhronizacija, funkcije za pisanje
     col(name){ return collection(db,name); },
     docRef(name,id){ return doc(db,name,id); },
-    setDoc, addDoc, updateDoc, deleteDoc, onSnapshot, increment, serverTimestamp,
+    setDoc:setDocSafe, addDoc:addDocSafe, updateDoc:updateDocSafe, deleteDoc:deleteDocSafe, onSnapshot, increment, serverTimestamp,
     // Pretplati se na kolekciju - poziva cb(arrayOfDocsWithId) svaki put kad se nešto promijeni (na bilo kom uređaju)
     watchCollection(name, cb){
       return onSnapshot(collection(db,name), snap=>{
@@ -2026,6 +2039,14 @@ async function spremiTr(){
   if(daje===prima){toast('⚠ Ista cisterna!');return;}
   const dost=raspolozivoLitara(daje);
   if(lit>dost){toast(`⚠ Cisterna koja daje nema dovoljno goriva! Raspoloživo: ${dost.toFixed(1)} L, traženo: ${lit} L`,4000);return;}
+  const cPrima=gC(prima);
+  if(cPrima&&cPrima.kapacitet){
+    const nakon=cisternaStanje(prima)+lit;
+    if(nakon>cPrima.kapacitet){
+      toast(`⚠ Cisterna ${cPrima.reg} (koja prima) ima kapacitet ${cPrima.kapacitet}L — ovaj transfer bi ga premašio za ${(nakon-cPrima.kapacitet).toFixed(0)}L.`,6000);
+      return;
+    }
+  }
   const podaci={datum:document.getElementById('tr-dat').value||nowDT(),cistijernDajeId:daje,cistijernPrimaId:prima,gorivo:document.getElementById('tr-gor').value,litara:lit,lokacija:document.getElementById('tr-lok').value.trim(),sig1:sigs.tr1,sig2:sigs.tr2,izvorUlaza:fifoAlociraj(daje,lit)};
   try{
     const ref=await window.FB.addDoc(window.FB.col('transferi'),podaci);
@@ -2051,6 +2072,16 @@ let editingUlId=null;
 async function spremiUl(){
   const cid=document.getElementById('ul-cist').value,lit=parseFloat(document.getElementById('ul-lit').value);
   if(!cid||!lit){toast('⚠ Popuni sva polja!');return;}
+  const c=gC(cid);
+  if(c&&c.kapacitet){
+    const trenutno=cisternaStanje(cid);
+    const trenutnoPriEditu = editingUlId ? trenutno-(S.ulazi.find(u=>u.id===editingUlId)?.litara||0) : trenutno;
+    const nakon=trenutnoPriEditu+lit;
+    if(nakon>c.kapacitet){
+      toast(`⚠ Cisterna ${c.reg} ima kapacitet ${c.kapacitet}L, trenutno ${trenutnoPriEditu.toFixed(0)}L — ovaj ulaz (${lit}L) bi premašio kapacitet za ${(nakon-c.kapacitet).toFixed(0)}L. Smanji količinu.`,6000);
+      return;
+    }
+  }
   const podaci={datum:document.getElementById('ul-dat').value||nowDT(),cistijernId:cid,dobav:document.getElementById('ul-dob').value.trim(),brDob:document.getElementById('ul-brdob').value.trim(),gorivo:document.getElementById('ul-gor').value,litara:lit,nap:document.getElementById('ul-nap').value.trim(),brFakture:document.getElementById('ul-fakt').value.trim(),cijenaLitra:parseFloat(document.getElementById('ul-cij').value)||0};
   try{
     if(editingUlId){
@@ -2170,6 +2201,13 @@ async function saveKorekcija(){
   const raz=parseFloat(document.getElementById('kor-razlika').value);
   const razlog=document.getElementById('kor-razlog').value.trim();
   if(!cid||!raz||!razlog){toast('⚠ Popuni sva polja (cisterna, razlika, razlog)!');return;}
+  const cKor=gC(cid);
+  if(cKor&&cKor.kapacitet&&raz>0){
+    const nakon=cisternaStanje(cid)+raz;
+    if(nakon>cKor.kapacitet){
+      if(!confirm(`⚠ Ova korekcija bi stanje podigla na ${nakon.toFixed(0)}L, iznad deklarisanog kapaciteta cisterne (${cKor.kapacitet}L). Nastaviti ipak? (npr. ako je stvarni kapacitet veći od unesenog)`)) return;
+    }
+  }
   try{
     const podaci={datum:nowDT(),cistijernId:cid,dobav:'KOREKCIJA',brDob:'',gorivo:'',litara:raz,nap:razlog};
     const ref=await window.FB.addDoc(window.FB.col('ulazi'),podaci);
