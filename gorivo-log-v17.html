@@ -1461,6 +1461,14 @@ function onScanSuccess(decodedText){
 // Pronalazi zadnju poznatu kilometražu/moto sate za vozilo (gleda sve sačuvane otpremnice).
 // Kompatibilno i sa starim zapisima (koji su imali km-početak/kraj umjesto jedne vrijednosti).
 // Prikaz kilometraže/moto sati (kompatibilno i sa starim zapisima koji su imali raspon)
+// Vraća {reg, model, firmaId} za stavku - koristi "zamrznute" podatke iz trenutka sipanja ako postoje
+// (novi zapisi), inače pada nazad na trenutno stanje vozila (stari zapisi prije ove izmjene).
+function stavkaVehInfo(s){
+  if(s.regSnap){ return {reg:s.regSnap, model:s.modelSnap||'', firmaId:s.firmaIdSnap||''}; }
+  const v=gV(s.kamionId);
+  return v ? {reg:v.reg, model:v.model||'', firmaId:v.firmaId||''} : {reg:'?', model:'', firmaId:''};
+}
+
 function formatMjerilo(s, isB){
   const val = isB ? (s.motoSati!=null?s.motoSati:s.motoSatiK) : (s.km!=null?s.km:s.kmKraj);
   if(val==null||val==='') return '—';
@@ -1546,7 +1554,9 @@ function addStavka(){
     motoSati:isB?val:null,
     litara:lit, sig:sigs.entry||null,
     vrijeme:new Date().toTimeString().slice(0,5),
-    izvorUlaza:fifoAlociraj(curOtp.cistijernId,lit)
+    izvorUlaza:fifoAlociraj(curOtp.cistijernId,lit),
+    // "Zamrznuti" podaci o vozilu u trenutku sipanja - buduće izmjene/uvoz vozila NE mijenjaju stare otpremnice
+    regSnap:v.reg, modelSnap:v.model||'', firmaIdSnap:v.firmaId||''
   });
   renderStavke();
   renderRecentVeh();
@@ -1568,7 +1578,7 @@ function renderStavke(){
   const uk=curOtp.stavke.reduce((a,s)=>a+s.litara,0);
   tot.textContent='Ukupno: '+uk+' L';
   if(warn){
-    const firmeSet=new Set(curOtp.stavke.map(s=>{const v=gV(s.kamionId);return v&&v.firmaId?v.firmaId:'_bezfirme';}));
+    const firmeSet=new Set(curOtp.stavke.map(s=>stavkaVehInfo(s).firmaId||'_bezfirme'));
     if(firmeSet.size>1){
       const nazivi=[...firmeSet].map(fid=>fid==='_bezfirme'?'bez firme':((S.firme.find(x=>x.id===fid)||{}).naziv||'?'));
       warn.textContent=`ℹ️ Vozila su iz ${firmeSet.size} različite firme (${nazivi.join(', ')}) — pri "Zatvori i štampaj" automatski će se napraviti posebna otpremnica za svaku firmu.`;
@@ -1576,12 +1586,12 @@ function renderStavke(){
     }else warn.style.display='none';
   }
   el.innerHTML=curOtp.stavke.map((s,i)=>{
-    const v=gV(s.kamionId),f=v?gF(v.firmaId):null;
-    const isB=v&&v.tip==='bager';
+    const vi=stavkaVehInfo(s),f=vi.firmaId?gF(vi.firmaId):null;
+    const vObj=gV(s.kamionId);const isB=vObj&&vObj.tip==='bager';
     const mj=formatMjerilo(s,isB);
     return`<div class="stavka"><div class="stavka-head">
       <div><span style="font-size:11px;color:var(--mut2)">R.br. ${i+1}</span>
-        <span class="stavka-reg" style="margin-left:8px">${v?v.reg:'?'}</span>
+        <span class="stavka-reg" style="margin-left:8px">${vi.reg}</span>
         <span class="tag t-l" style="margin-left:6px">${s.litara} L</span>
         ${f?`<span class="tag t-f" style="margin-left:4px">${f.naziv}</span>`:''}
       </div>
@@ -1655,7 +1665,8 @@ async function generisiTestnuOtpremnicu(){
       litara:litraPoStavci,
       sig:generisiTestniPotpis(i+1),
       vrijeme,
-      izvorUlaza:fifoAlociraj(cisterna.id,litraPoStavci)
+      izvorUlaza:fifoAlociraj(cisterna.id,litraPoStavci),
+      regSnap:v.reg, modelSnap:v.model||'', firmaIdSnap:v.firmaId||''
     });
   });
 
@@ -1670,8 +1681,7 @@ async function zatvoriOtp(){
     // svaka firma dobija svoju posebnu otpremnicu (svoj broj), umjesto da se miješaju u jednu.
     const grupe={};
     curOtp.stavke.forEach(s=>{
-      const v=gV(s.kamionId);
-      const fid=(v&&v.firmaId)?v.firmaId:'_bezfirme';
+      const fid=stavkaVehInfo(s).firmaId||'_bezfirme';
       (grupe[fid]=grupe[fid]||[]).push(s);
     });
     const fidKeys=Object.keys(grupe);
@@ -2552,8 +2562,9 @@ function exportIzvjestajExcel(){
   all.forEach(o=>{
     const c=gC(o.cistijernId),g=gG(o.gradId);
     o.stavke.forEach(s=>{
-      const v=gV(s.kamionId),f=v?gF(v.firmaId):null,isB=v&&v.tip==='bager';
-      rows.push([o.datum, s.vrijeme||'', o.brojOtp, c?c.reg:'?', g?g.naziv:'?', f?f.naziv:'?', v?v.reg:'?', v?v.model||'':'', s.vozacIme||'', formatMjerilo(s,isB), s.litara, o.gorivo]);
+      const vi=stavkaVehInfo(s),f=vi.firmaId?gF(vi.firmaId):null;
+      const vObj=gV(s.kamionId),isB=vObj&&vObj.tip==='bager';
+      rows.push([o.datum, s.vrijeme||'', o.brojOtp, c?c.reg:'?', g?g.naziv:'?', f?f.naziv:'?', vi.reg, vi.model, s.vozacIme||'', formatMjerilo(s,isB), s.litara, o.gorivo]);
     });
   });
   const ws=XLSX.utils.aoa_to_sheet(rows);
@@ -2922,13 +2933,14 @@ function printOtp(id,obj){
   const c=gC(o.cistijernId),g=gG(o.gradId),mf=S.mojaFirma;
   const ukL=o.stavke.reduce((a,s)=>a+s.litara,0);
   const rows=o.stavke.map((s,i)=>{
-    const v=gV(s.kamionId),isB=v&&v.tip==='bager';
+    const vi=stavkaVehInfo(s);
+    const vObj=gV(s.kamionId),isB=vObj&&vObj.tip==='bager';
     const mj=formatMjerilo(s,isB);
     return`<tr>
       <td>${i+1}</td>
       <td>${s.vozacIme||'—'}</td>
-      <td style="font-family:monospace;font-weight:700">${v?v.reg:'?'}</td>
-      <td style="font-size:9px;color:#666">${v?v.model||'':''}</td>
+      <td style="font-family:monospace;font-weight:700">${vi.reg}</td>
+      <td style="font-size:9px;color:#666">${vi.model}</td>
       <td style="font-family:monospace">${mj}</td>
       <td style="font-family:monospace;font-size:10px">${s.vrijeme||'—'}</td>
       <td style="font-family:monospace;font-weight:700;text-align:right">${s.litara}</td>
@@ -3095,7 +3107,7 @@ async function napraviBackup(){
   dodajList('Cisterne',[['Registracija','Vozač'],...S.cistijerne.map(c=>[c.reg,c.vozac||''])]);
   dodajList('Gradilista',[['Naziv','Lokacija'],...S.gradilista.map(g=>[g.naziv,g.lok||''])]);
   const otpRows=[['Datum','Vrijeme','Broj','Cisterna','Gradiliste','Vozilo','Vozac','KM/MotoSati','Litara']];
-  S.otpremnice.forEach(o=>{const c=gC(o.cistijernId),g=gG(o.gradId);o.stavke.forEach(s=>{const v=gV(s.kamionId),isB=v&&v.tip==='bager';otpRows.push([o.datum,s.vrijeme||'',o.brojOtp,c?.reg||'',g?.naziv||'',v?.reg||'',s.vozacIme||'',formatMjerilo(s,isB),s.litara]);});});
+  S.otpremnice.forEach(o=>{const c=gC(o.cistijernId),g=gG(o.gradId);o.stavke.forEach(s=>{const vi=stavkaVehInfo(s),vObj=gV(s.kamionId),isB=vObj&&vObj.tip==='bager';otpRows.push([o.datum,s.vrijeme||'',o.brojOtp,c?.reg||'',g?.naziv||'',vi.reg,s.vozacIme||'',formatMjerilo(s,isB),s.litara]);});});
   dodajList('Otpremnice',otpRows);
   const otp3Rows=[['Datum','Vrijeme','Broj','Firma','Cisterna','Registracija','Vozac','Litara']];
   S.otpremnice3.forEach(o=>{const c=gC(o.cistijernId),f=S.treceLiceFirme.find(x=>x.id===o.treceLiceId);o.stavke.forEach(s=>{otp3Rows.push([o.datum,s.vrijeme||'',o.brojOtp,f?.naziv||'',c?.reg||'',s.reg,s.vozac||'',s.litara]);});});
