@@ -694,10 +694,12 @@ body.driver-mode .app{padding-bottom:78px}
 <div class="tab" id="tab-arhiva">
   <div class="card">
     <div class="card-title">🔍 Pretraži vozilo</div>
-    <div class="vsearch-wrap fg">
-      <label>Registracija, model ili vozač</label>
-      <input type="text" id="arh-q" placeholder="Upiši da pretražiš..." oninput="renderArhiva(this.value)">
+    <div class="grid3">
+      <div class="fg" style="grid-column:1/2"><label>Registracija, model ili vozač</label><input type="text" id="arh-q" placeholder="Upiši da pretražiš..." oninput="renderArhiva(this.value)"></div>
+      <div class="fg"><label>Period od</label><input type="date" id="arh-od" onchange="renderArhiva(document.getElementById('arh-q').value)"></div>
+      <div class="fg"><label>Period do</label><input type="date" id="arh-do" onchange="renderArhiva(document.getElementById('arh-q').value)"></div>
     </div>
+    <button class="btn btn-s" onclick="document.getElementById('arh-od').value='';document.getElementById('arh-do').value='';renderArhiva(document.getElementById('arh-q').value)">✕ Očisti period</button>
   </div>
   <div id="arh-res"></div>
 </div>
@@ -2399,13 +2401,19 @@ async function sacuvajEditStavke(){
 function renderArhiva(q){
   const el=document.getElementById('arh-res');
   if(!q||q.length<2){el.innerHTML='';return;}
+  const od=document.getElementById('arh-od')?.value||'', do_=document.getElementById('arh-do')?.value||'';
   const found=S.vozila.filter(v=>v.reg.toLowerCase().includes(q.toLowerCase())||(v.vozac||'').toLowerCase().includes(q.toLowerCase())||(v.model||'').toLowerCase().includes(q.toLowerCase()));
   if(!found.length){el.innerHTML='<div class="card"><div class="empty">Nema vozila</div></div>';return;}
   el.innerHTML=found.map(v=>{
     const f=gF(v.firmaId);
     let stavke=[];
-    S.otpremnice.forEach(o=>{o.stavke.forEach(s=>{if(s.kamionId===v.id)stavke.push({...s,datum:o.datum,brojOtp:o.brojOtp,grad:gG(o.gradId),cisterna:gC(o.cistijernId)});});});
+    S.otpremnice.filter(o=>!o.stornirano).forEach(o=>{
+      if(od && o.datum<od) return;
+      if(do_ && o.datum>do_) return;
+      o.stavke.forEach(s=>{if(s.kamionId===v.id)stavke.push({...s,datum:o.datum,brojOtp:o.brojOtp,grad:gG(o.gradId),cisterna:gC(o.cistijernId)});});
+    });
     stavke.sort((a,b)=>b.datum.localeCompare(a.datum));
+    const isB=v.tip==='bager';
     // Prirast = razlika prema SLJEDEĆEM (starijem) očitanju za isto vozilo (lista je najnoviji->najstariji)
     for(let i=0;i<stavke.length;i++){
       const cur = isB ? (stavke[i].motoSati!=null?stavke[i].motoSati:stavke[i].motoSatiK) : (stavke[i].km!=null?stavke[i].km:stavke[i].kmKraj);
@@ -2414,15 +2422,18 @@ function renderArhiva(q){
       stavke[i]._prirast = (cur!=null && prev!=null) ? +(cur-prev).toFixed(1) : null;
     }
     const ukLit=stavke.reduce((a,s)=>a+s.litara,0);
-    const isB=v.tip==='bager';
+    window['_arhStavke_'+v.id]=stavke; // za Excel export dugme
     return`<div class="card">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px">
         <div>
           <span style="font-size:20px;font-weight:900;color:var(--acc);font-family:monospace">${v.reg}</span>
           <span class="tag ${tipTag(v.tip)}" style="margin-left:8px">${tipL(v.tip)}</span>
           <div style="font-size:12px;color:var(--mut2);margin-top:3px">${v.model||''} · ${f?f.naziv:'?'} · ${v.vozac||'—'}</div>
         </div>
-        <span class="tag t-l" style="font-size:14px;padding:6px 14px">${ukLit} L ukupno</span>
+        <div style="display:flex;align-items:center;gap:8px">
+          <span class="tag t-l" style="font-size:14px;padding:6px 14px">${ukLit} L ukupno</span>
+          ${stavke.length?`<button class="btn btn-s" style="padding:6px 10px;font-size:11px" onclick="exportArhivaExcel('${v.id}')">⬇ Excel</button>`:''}
+        </div>
       </div>
       ${stavke.length?`<div class="tw"><table>
         <thead><tr><th>Datum</th><th>Otpremnica</th><th>Cisterna</th><th>Gradilište</th><th>${isB?'Moto sati':'Kilometraža'}</th><th>Prirast</th><th>Litara</th><th>Vozač</th></tr></thead>
@@ -2439,6 +2450,23 @@ function renderArhiva(q){
         :`<div class="empty" style="padding:20px">Nema evidencije točenja</div>`}
     </div>`;
   }).join('');
+}
+
+function exportArhivaExcel(vehId){
+  if(typeof XLSX==='undefined'){toast('⚠ Učitava se Excel biblioteka, pokušaj za sekundu...',3000);return;}
+  const v=gV(vehId);if(!v)return;
+  const stavke=window['_arhStavke_'+vehId]||[];
+  const isB=v.tip==='bager';
+  const rows=[['Datum','Broj otpremnice','Cisterna','Gradilište',isB?'Moto sati':'Kilometraža','Prirast','Litara','Vozač']];
+  stavke.forEach(s=>{
+    rows.push([s.datum, s.brojOtp, s.cisterna?s.cisterna.reg:'?', s.grad?s.grad.naziv:'?', formatMjerilo(s,isB), s._prirast!=null?s._prirast:'', s.litara, s.vozacIme||'']);
+  });
+  const ws=XLSX.utils.aoa_to_sheet(rows);
+  ws['!cols']=[{wch:12},{wch:16},{wch:10},{wch:18},{wch:14},{wch:10},{wch:9},{wch:20}];
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,ws,v.reg.replace(/[\/\\?*[\]]/g,'-').slice(0,30));
+  XLSX.writeFile(wb,`arhiva_${v.reg.replace(/[^a-zA-Z0-9]/g,'_')}_${today()}.xlsx`);
+  toast('✓ Excel preuzet!');
 }
 
 // ═══ RAZDUŽENJE ═══
