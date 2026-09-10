@@ -1509,6 +1509,23 @@ function renderRecentVeh(){
     top.map(v=>`<button type="button" class="btn btn-qr" style="padding:11px 18px;font-size:15px;font-weight:700" onclick="selectVeh('${v.id}')">${v.reg}</button>`).join('')+'</div>';
 }
 
+// Ako je vozač za vozilo drugačiji od podrazumijevanog u bazi - ponudi da se ažurira (npr. vozilo trajno
+// promijenilo vozača), da se sledeći put ne mora ponovo ručno ispravljati.
+async function ponudiAzuriranjeVozaca(vehId, noviVozac){
+  const v=gV(vehId);
+  if(!v||!noviVozac) return;
+  const trenutni=(v.vozac||'').trim();
+  const novi=noviVozac.trim();
+  if(!novi || trenutni.toLowerCase()===novi.toLowerCase()) return; // isto ili prazno, nema šta da se radi
+  if(!confirm(`Vozač za ${v.reg} u bazi je "${trenutni||'nepoznato'}", a upisao si "${novi}".\n\nAžurirati podrazumijevano ime vozača za ovo vozilo (da se sledeći put samo ponudi, bez ponovnog kucanja)?`)) return;
+  try{
+    await window.FB.setDoc(window.FB.docRef('vozila',vehId),{vozac:novi},{merge:true});
+    v.vozac=novi;
+    logAkcija('Ažuriran vozač vozila', `${v.reg}: "${trenutni||'—'}" → "${novi}"`);
+    toast('✓ Podrazumijevani vozač ažuriran za '+v.reg);
+  }catch(e){toast('⚠ Greška: '+e.message);}
+}
+
 function selectVeh(id){
   const v=gV(id);if(!v)return;
   const f=gF(v.firmaId);
@@ -1532,7 +1549,7 @@ function selectVeh(id){
   document.getElementById('e-sig-p').innerHTML='<span style="color:var(--mut2);font-size:12px">👆 Dodirni za potpis</span>';
 }
 
-function addStavka(){
+async function addStavka(){
   const v=gV(curVehId);
   if(!v){toast('⚠ Odaberi vozilo!');return;}
   const lit=parseFloat(document.getElementById('e-lit').value);
@@ -1558,6 +1575,7 @@ function addStavka(){
     // "Zamrznuti" podaci o vozilu u trenutku sipanja - buduće izmjene/uvoz vozila NE mijenjaju stare otpremnice
     regSnap:v.reg, modelSnap:v.model||'', firmaIdSnap:v.firmaId||''
   });
+  await ponudiAzuriranjeVozaca(curVehId, document.getElementById('e-voz').value);
   renderStavke();
   renderRecentVeh();
   // reset
@@ -2286,15 +2304,25 @@ function openEditStavke(tip,id){
   const body=document.getElementById('edit-stavke-body');
   if(tip==='otpremnice3'){
     body.innerHTML=o.stavke.map((s,i)=>`<div class="fg full" style="border-bottom:1px solid var(--bord);padding-bottom:10px;margin-bottom:10px">
-      <label>${s.reg} — ${s.vozac||'bez imena'}</label>
+      <label>Stavka ${i+1}</label>
+      <div style="display:flex;gap:8px;margin-bottom:6px">
+        <input type="text" data-i="${i}" data-f="reg" value="${s.reg}" placeholder="Registracija" style="flex:1">
+        <input type="text" data-i="${i}" data-f="vozac" value="${s.vozac||''}" placeholder="Ime vozača" style="flex:1">
+      </div>
       <input type="number" step=".5" data-i="${i}" data-f="litara" value="${s.litara}" placeholder="Litara">
     </div>`).join('');
   }else{
     body.innerHTML=o.stavke.map((s,i)=>{
-      const v=gV(s.kamionId),isB=v&&v.tip==='bager';
+      const vi=stavkaVehInfo(s);
+      const vObj=gV(s.kamionId),isB=vObj&&vObj.tip==='bager';
       const val=isB?(s.motoSati!=null?s.motoSati:s.motoSatiK):(s.km!=null?s.km:s.kmKraj);
+      const vozilaOpcije=S.vozila.map(v=>`<option value="${v.id}" ${v.id===s.kamionId?'selected':''}>${v.reg} — ${v.model||''}</option>`).join('');
       return`<div class="fg full" style="border-bottom:1px solid var(--bord);padding-bottom:10px;margin-bottom:10px">
-      <label>${v?v.reg:'?'} — ${s.vozacIme||'bez imena'}</label>
+      <label>Stavka ${i+1} <span style="color:var(--mut2);font-weight:400">(trenutno: ${vi.reg} — ${s.vozacIme||'bez imena'})</span></label>
+      <div style="display:flex;gap:8px;margin-bottom:6px">
+        <select data-i="${i}" data-f="vozilo" style="flex:1"><option value="">— ne mijenjaj —</option>${vozilaOpcije}</select>
+        <input type="text" data-i="${i}" data-f="vozacIme" value="${s.vozacIme||''}" placeholder="Ime vozača" style="flex:1">
+      </div>
       <div style="display:flex;gap:8px">
         <input type="number" step=".5" data-i="${i}" data-f="litara" value="${s.litara}" placeholder="Litara" style="flex:1">
         <input type="number" step=".1" data-i="${i}" data-f="mjerilo" value="${val!=null?val:''}" placeholder="${isB?'Moto sati':'Kilometraža'}" style="flex:1">
@@ -2308,25 +2336,54 @@ async function sacuvajEditStavke(){
   const t=window._editTarget;if(!t)return;
   const arr=t.tip==='otpremnice3'?S.otpremnice3:S.otpremnice;
   const o=arr.find(x=>x.id===t.id);if(!o)return;
-  const inputs=[...document.querySelectorAll('#edit-stavke-body input')];
   const izmjene=[];
   const noveStavke=o.stavke.map(s=>({...s}));
-  inputs.forEach(inp=>{
-    const i=+inp.dataset.i, f=inp.dataset.f, val=parseFloat(inp.value);
-    if(isNaN(val))return;
-    if(f==='litara' && noveStavke[i].litara!==val){
-      izmjene.push(`stavka ${i+1}: litara ${noveStavke[i].litara}→${val}`);
-      noveStavke[i].litara=val;
-    }
-    if(f==='mjerilo'){
-      const v=gV(noveStavke[i].kamionId),isB=v&&v.tip==='bager';
-      const staro=isB?(noveStavke[i].motoSati!=null?noveStavke[i].motoSati:noveStavke[i].motoSatiK):(noveStavke[i].km!=null?noveStavke[i].km:noveStavke[i].kmKraj);
-      if(staro!==val){
-        izmjene.push(`stavka ${i+1}: ${isB?'moto sati':'km'} ${staro}→${val}`);
-        if(isB) noveStavke[i].motoSati=val; else noveStavke[i].km=val;
+
+  if(t.tip==='otpremnice3'){
+    document.querySelectorAll('#edit-stavke-body input').forEach(inp=>{
+      const i=+inp.dataset.i, f=inp.dataset.f;
+      if(f==='litara'){
+        const val=parseFloat(inp.value);
+        if(!isNaN(val)&&noveStavke[i].litara!==val){izmjene.push(`stavka ${i+1}: litara ${noveStavke[i].litara}→${val}`);noveStavke[i].litara=val;}
+      }else if(f==='reg'){
+        const val=inp.value.trim().toUpperCase();
+        if(val&&noveStavke[i].reg!==val){izmjene.push(`stavka ${i+1}: registracija ${noveStavke[i].reg}→${val}`);noveStavke[i].reg=val;}
+      }else if(f==='vozac'){
+        const val=inp.value.trim();
+        if(noveStavke[i].vozac!==val){izmjene.push(`stavka ${i+1}: vozač ${noveStavke[i].vozac||'—'}→${val||'—'}`);noveStavke[i].vozac=val;}
       }
-    }
-  });
+    });
+  }else{
+    // Prvo obradi promjenu vozila (ako ima) da se litara/mjerilo ispravno primijene na novo vozilo
+    document.querySelectorAll('#edit-stavke-body select[data-f="vozilo"]').forEach(sel=>{
+      const i=+sel.dataset.i, novoId=sel.value;
+      if(novoId && novoId!==noveStavke[i].kamionId){
+        const novoV=gV(novoId), staroV=gV(noveStavke[i].kamionId);
+        izmjene.push(`stavka ${i+1}: vozilo ${staroV?staroV.reg:'?'}→${novoV?novoV.reg:'?'}`);
+        noveStavke[i].kamionId=novoId;
+        noveStavke[i].regSnap=novoV.reg; noveStavke[i].modelSnap=novoV.model||''; noveStavke[i].firmaIdSnap=novoV.firmaId||'';
+      }
+    });
+    document.querySelectorAll('#edit-stavke-body input').forEach(inp=>{
+      const i=+inp.dataset.i, f=inp.dataset.f;
+      if(f==='litara'){
+        const val=parseFloat(inp.value);
+        if(!isNaN(val)&&noveStavke[i].litara!==val){izmjene.push(`stavka ${i+1}: litara ${noveStavke[i].litara}→${val}`);noveStavke[i].litara=val;}
+      }else if(f==='vozacIme'){
+        const val=inp.value.trim();
+        if(noveStavke[i].vozacIme!==val){izmjene.push(`stavka ${i+1}: vozač ${noveStavke[i].vozacIme||'—'}→${val||'—'}`);noveStavke[i].vozacIme=val;}
+      }else if(f==='mjerilo'){
+        const val=parseFloat(inp.value);
+        if(isNaN(val))return;
+        const v=gV(noveStavke[i].kamionId),isB=v&&v.tip==='bager';
+        const staro=isB?(noveStavke[i].motoSati!=null?noveStavke[i].motoSati:noveStavke[i].motoSatiK):(noveStavke[i].km!=null?noveStavke[i].km:noveStavke[i].kmKraj);
+        if(staro!==val){
+          izmjene.push(`stavka ${i+1}: ${isB?'moto sati':'km'} ${staro}→${val}`);
+          if(isB) noveStavke[i].motoSati=val; else noveStavke[i].km=val;
+        }
+      }
+    });
+  }
   if(!izmjene.length){toast('Nema izmjena.');closeModal('editStavkeModal');return;}
   try{
     await window.FB.setDoc(window.FB.docRef(t.tip,t.id),{stavke:noveStavke},{merge:true});
