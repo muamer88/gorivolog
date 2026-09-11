@@ -462,6 +462,16 @@ body.driver-mode .app{padding-bottom:78px}
     <div class="card-title">🚦 Stanje cisterni</div>
     <div id="dash-semafor" style="display:flex;gap:10px;flex-wrap:wrap"></div>
   </div>
+  <div class="card">
+    <div class="card-title">💰 Trošak goriva</div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">
+      <button class="btn btn-s" data-period="danas" style="padding:6px 12px;font-size:12px" onclick="dashTrosakPeriod('danas')">Danas</button>
+      <button class="btn btn-s" data-period="7" style="padding:6px 12px;font-size:12px" onclick="dashTrosakPeriod('7')">7 dana</button>
+      <button class="btn btn-p" data-period="mjesec" style="padding:6px 12px;font-size:12px" onclick="dashTrosakPeriod('mjesec')">Ovaj mjesec</button>
+      <button class="btn btn-s" data-period="sve" style="padding:6px 12px;font-size:12px" onclick="dashTrosakPeriod('sve')">Sve</button>
+    </div>
+    <div id="dash-trosak"></div>
+  </div>
   <div class="grid2" style="gap:14px">
     <div class="card">
       <div class="card-title">⚡ Brze radnje</div>
@@ -1829,9 +1839,48 @@ function resetOtpForm(){
   document.getElementById('entry-form').style.display='none';
 }
 
+// ═══ DASHBOARD - trošak goriva sa brzim periodima ═══
+function dashTrosakPeriod(period){
+  window._dashTrosakAktivan=period;
+  const el=document.getElementById('dash-trosak');if(!el)return;
+  // Osvježi izgled dugmadi (aktivan = puna boja)
+  document.querySelectorAll('[data-period]').forEach(b=>{
+    b.className = 'btn '+(b.dataset.period===period?'btn-p':'btn-s');
+    b.style.padding='6px 12px'; b.style.fontSize='12px';
+  });
+  const dNow=new Date();
+  let od='', do_='';
+  if(period==='danas'){ od=do_=today(); }
+  else if(period==='7'){ const d7=new Date(dNow); d7.setDate(d7.getDate()-6); od=d7.toISOString().slice(0,10); do_=today(); }
+  else if(period==='mjesec'){ od=dNow.toISOString().slice(0,8)+'01'; do_=today(); }
+  // 'sve' ostaje bez filtera
+
+  let trUkLit=0, trUkKM=0, trBezCijene=0;
+  const poGrad={};
+  S.otpremnice.filter(o=>!o.stornirano && (!od||o.datum>=od) && (!do_||o.datum<=do_)).forEach(o=>{
+    o.stavke.forEach(s=>{
+      const trosak=izracunajTrosakStavke(s);
+      trUkLit+=s.litara; trUkKM+=trosak;
+      if(trosak===0) trBezCijene+=s.litara;
+      if(!poGrad[o.gradId]) poGrad[o.gradId]={lit:0,km:0};
+      poGrad[o.gradId].lit+=s.litara; poGrad[o.gradId].km+=trosak;
+    });
+  });
+  const top3=Object.entries(poGrad).sort((a,b)=>b[1].km-a[1].km).slice(0,3);
+  el.innerHTML=`
+    <div style="display:flex;gap:20px;flex-wrap:wrap;margin-bottom:10px">
+      <div><div style="font-size:22px;font-weight:900;color:var(--acc)">${trUkKM.toFixed(2)} KM</div><div style="font-size:11px;color:var(--mut2)">ukupan trošak</div></div>
+      <div><div style="font-size:22px;font-weight:900">${trUkLit.toLocaleString()} L</div><div style="font-size:11px;color:var(--mut2)">ukupno litara</div></div>
+    </div>
+    ${top3.length?`<div style="font-size:12px;color:var(--mut2);margin-bottom:4px">Top gradilišta po trošku:</div>`+top3.map(([gid,d])=>{const g=gG(gid);return `<div style="display:flex;justify-content:space-between;font-size:13px;padding:3px 0"><span>${g?g.naziv:'?'}</span><b>${d.km.toFixed(2)} KM</b></div>`;}).join(''):'<div class="empty" style="padding:10px">Nema podataka za ovaj period</div>'}
+    ${trBezCijene>0?`<div style="font-size:11px;color:var(--acc2);margin-top:6px">⚠ ${trBezCijene.toFixed(0)}L bez poznate cijene (nije uračunato)</div>`:''}
+  `;
+}
+
 // ═══ DASHBOARD (početna stranica admina) ═══
 function renderDashboard(){
   renderCisternaSemafor('dash-semafor');
+  dashTrosakPeriod(window._dashTrosakAktivan||'mjesec');
   const d=today();
   const otpDanas=S.otpremnice.filter(o=>o.datum===d && !o.stornirano);
   const otp3Danas=S.otpremnice3.filter(o=>o.datum===d && !o.stornirano);
