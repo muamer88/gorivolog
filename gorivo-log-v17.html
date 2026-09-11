@@ -732,11 +732,14 @@ body.driver-mode .app{padding-bottom:78px}
 <!-- ═══ TAB: IZVJEŠTAJ ═══ -->
 <div class="tab" id="tab-izvjestaj">
   <div class="card">
-    <div class="card-title">📅 Period izvještaja</div>
+    <div class="card-title">📅 Period i filteri</div>
     <div class="grid3">
       <div class="fg"><label>Od</label><input type="date" id="izv-od" onchange="renderIzv()"></div>
       <div class="fg"><label>Do</label><input type="date" id="izv-do" onchange="renderIzv()"></div>
-      <div class="fg" style="justify-content:flex-end"><button class="btn btn-s" onclick="document.getElementById('izv-od').value='';document.getElementById('izv-do').value='';renderIzv()">✕ Očisti period</button></div>
+      <div class="fg" style="justify-content:flex-end"><button class="btn btn-s" onclick="ocistiIzvFiltere()">✕ Očisti sve filtere</button></div>
+      <div class="fg"><label>Gradilište</label><select id="izv-fil-grad" onchange="renderIzv()"><option value="">— sva —</option></select></div>
+      <div class="fg"><label>Firma</label><select id="izv-fil-firma" onchange="renderIzv()"><option value="">— sve —</option></select></div>
+      <div class="fg"><label>Vozilo</label><select id="izv-fil-vozilo" onchange="renderIzv()"><option value="">— sva —</option></select></div>
     </div>
     <div class="btn-row">
       <button class="btn btn-xl" onclick="exportIzvjestajExcel()">⬇ Excel — sirovi podaci</button>
@@ -2669,13 +2672,37 @@ let chartNedeljno=null, chartDnevno=null, chartTop=null;
 
 function filtrirajPeriod(lista, poljeDatuma){
   const od=document.getElementById('izv-od').value, do_=document.getElementById('izv-do').value;
+  const gradFil=document.getElementById('izv-fil-grad')?.value||'';
   return lista.filter(x=>{
     if(x.stornirano) return false; // stornirane otpremnice se ne broje u izvještaje/statistiku
     const d=(x[poljeDatuma]||'').split('T')[0];
     if(od && d<od) return false;
     if(do_ && d>do_) return false;
+    if(gradFil && x.gradId!==gradFil) return false;
     return true;
   });
+}
+// Da li stavka prolazi kroz filter Firme i Vozila (period+gradilište su već primijenjeni na nivou otpremnice u filtrirajPeriod)
+function stavkaProladiFilter(s){
+  const firmaFil=document.getElementById('izv-fil-firma')?.value||'';
+  const vozFil=document.getElementById('izv-fil-vozilo')?.value||'';
+  if(vozFil && s.kamionId!==vozFil) return false;
+  if(firmaFil){ const vi=stavkaVehInfo(s); if(vi.firmaId!==firmaFil) return false; }
+  return true;
+}
+function ocistiIzvFiltere(){
+  ['izv-od','izv-do'].forEach(id=>document.getElementById(id).value='');
+  ['izv-fil-grad','izv-fil-firma','izv-fil-vozilo'].forEach(id=>document.getElementById(id).selectedIndex=0);
+  renderIzv();
+}
+function populateIzvFiltere(){
+  const gEl=document.getElementById('izv-fil-grad'), fEl=document.getElementById('izv-fil-firma'), vEl=document.getElementById('izv-fil-vozilo');
+  if(!gEl)return;
+  const curG=gEl.value,curF=fEl.value,curV=vEl.value;
+  gEl.innerHTML='<option value="">— sva —</option>'+S.gradilista.map(g=>`<option value="${g.id}">${g.naziv}</option>`).join('');
+  fEl.innerHTML='<option value="">— sve —</option>'+S.firme.map(f=>`<option value="${f.id}">${f.naziv}</option>`).join('');
+  vEl.innerHTML='<option value="">— sva —</option>'+S.vozila.map(v=>`<option value="${v.id}">${v.reg}</option>`).join('');
+  gEl.value=curG; fEl.value=curF; vEl.value=curV;
 }
 
 // Izračunava STVARAN trošak (KM) prateći lanac unazad do originalne fakture (kroz eventualne transfere).
@@ -2700,7 +2727,9 @@ function izracunajTrosakStavke(s){
 }
 
 function renderIzv(){
-  const all=filtrirajPeriod(S.otpremnice,'datum');
+  populateIzvFiltere();
+  // Filtriraj otpremnice po periodu+gradilištu, pa svaku dodatno po firmi/vozilu na nivou stavke
+  const all=filtrirajPeriod(S.otpremnice,'datum').map(o=>({...o, stavke:o.stavke.filter(stavkaProladiFilter)})).filter(o=>o.stavke.length);
   const all3=filtrirajPeriod(S.otpremnice3,'datum');
   const ukL=all.reduce((a,o)=>a+o.stavke.reduce((b,s)=>b+s.litara,0),0);
   const ukBr=all.reduce((a,o)=>a+o.stavke.length,0);
@@ -2714,10 +2743,10 @@ function renderIzv(){
   const fm={};all.forEach(o=>o.stavke.forEach(s=>{const vi=stavkaVehInfo(s);if(!vi.firmaId)return;if(!fm[vi.firmaId])fm[vi.firmaId]={lit:0,br:0,km:0};fm[vi.firmaId].lit+=s.litara;fm[vi.firmaId].br++;fm[vi.firmaId].km+=izracunajTrosakStavke(s);}));
   const fa=Object.entries(fm).sort((a,b)=>b[1].lit-a[1].lit);const mxF=fa[0]?.[1]?.lit||1;
   document.getElementById('rep-f').innerHTML=fa.map(([fid,d])=>{const f=gF(fid);return`<div class="rep-item"><div style="display:flex;justify-content:space-between"><span style="font-weight:700">${f?f.naziv:'?'}</span><span class="tag t-l">${d.lit.toLocaleString()} L${d.km>0?` · <span class="admin-only" style="display:inline">${d.km.toFixed(2)} KM</span>`:''}</span></div><div class="rep-bar-wrap"><div class="rep-bar" style="width:${d.lit/mxF*100}%;background:var(--acc3)"></div></div><div style="font-size:11px;color:var(--mut2);margin-top:3px">${d.br} točenja</div></div>`;}).join('')||'<div class="empty">Nema podataka</div>';
-  // Po gradilištu
-  const gm={};all.forEach(o=>o.stavke.forEach(s=>{if(!gm[o.gradId])gm[o.gradId]={lit:0,br:0,km:0};gm[o.gradId].lit+=s.litara;gm[o.gradId].br++;gm[o.gradId].km+=izracunajTrosakStavke(s);}));
+  // Po gradilištu (napomena firme/firmi koje su tu radile, ako je poznato)
+  const gm={};all.forEach(o=>o.stavke.forEach(s=>{if(!gm[o.gradId])gm[o.gradId]={lit:0,br:0,km:0,firme:new Set()};const vi=stavkaVehInfo(s);if(vi.firmaId)gm[o.gradId].firme.add(vi.firmaId);gm[o.gradId].lit+=s.litara;gm[o.gradId].br++;gm[o.gradId].km+=izracunajTrosakStavke(s);}));
   const ga=Object.entries(gm).sort((a,b)=>b[1].lit-a[1].lit);const mxG=ga[0]?.[1]?.lit||1;
-  document.getElementById('rep-g').innerHTML=ga.map(([gid,d])=>{const g=gG(gid);return`<div class="rep-item"><div style="display:flex;justify-content:space-between"><span style="font-weight:700">${g?g.naziv:'?'}</span><span class="tag t-l">${d.lit.toLocaleString()} L${d.km>0?` · <span class="admin-only" style="display:inline">${d.km.toFixed(2)} KM</span>`:''}</span></div><div class="rep-bar-wrap"><div class="rep-bar" style="width:${d.lit/mxG*100}%;background:var(--acc2)"></div></div><div style="font-size:11px;color:var(--mut2);margin-top:3px">${g?g.lok:''} · ${d.br} točenja</div></div>`;}).join('')||'<div class="empty">Nema podataka</div>';
+  document.getElementById('rep-g').innerHTML=ga.map(([gid,d])=>{const g=gG(gid);const firmeNazivi=[...d.firme].map(fid=>gF(fid)?.naziv).filter(Boolean).join(', ');return`<div class="rep-item"><div style="display:flex;justify-content:space-between"><span style="font-weight:700">${g?g.naziv:'?'}</span><span class="tag t-l">${d.lit.toLocaleString()} L${d.km>0?` · <span class="admin-only" style="display:inline">${d.km.toFixed(2)} KM</span>`:''}</span></div><div class="rep-bar-wrap"><div class="rep-bar" style="width:${d.lit/mxG*100}%;background:var(--acc2)"></div></div><div style="font-size:11px;color:var(--mut2);margin-top:3px">${g?g.lok:''} · ${d.br} točenja${firmeNazivi?' · '+firmeNazivi:''}</div></div>`;}).join('')||'<div class="empty">Nema podataka</div>';
   // Po tipu
   const tm={kamion:{lit:0,br:0,vz:new Set()},bager:{lit:0,br:0,vz:new Set()},malo:{lit:0,br:0,vz:new Set()}};
   all.forEach(o=>o.stavke.forEach(s=>{const v=gV(s.kamionId);if(!v)return;const t=v.tip;if(!tm[t])tm[t]={lit:0,br:0,vz:new Set()};tm[t].lit+=s.litara;tm[t].br++;tm[t].vz.add(v.id);}));
@@ -2835,7 +2864,7 @@ function exportIzvjestajExcel(){
   const rows=[['Datum','Vrijeme','Broj otpremnice','Cisterna','Gradilište','Firma','Vozilo','Model','Vozač','KM/MotoSati','Litara','Gorivo','Trošak (KM)']];
   all.forEach(o=>{
     const c=gC(o.cistijernId),g=gG(o.gradId);
-    o.stavke.forEach(s=>{
+    o.stavke.filter(stavkaProladiFilter).forEach(s=>{
       const vi=stavkaVehInfo(s),f=vi.firmaId?gF(vi.firmaId):null;
       const vObj=gV(s.kamionId),isB=vObj&&vObj.tip==='bager';
       const trosak=izracunajTrosakStavke(s);
@@ -2854,15 +2883,16 @@ function exportPivotExcel(){
   if(typeof XLSX==='undefined'){toast('⚠ Učitava se Excel biblioteka, pokušaj za sekundu...',3000);return;}
   const all=filtrirajPeriod(S.otpremnice,'datum');
   const pv={};
-  all.forEach(o=>o.stavke.forEach(s=>{
+  all.forEach(o=>o.stavke.filter(stavkaProladiFilter).forEach(s=>{
     const v=gV(s.kamionId);if(!v)return;
     const isB=v.tip==='bager';
     const val=isB?(s.motoSati!=null?s.motoSati:s.motoSatiK):(s.km!=null?s.km:s.kmKraj);
-    if(!pv[v.id]) pv[v.id]={ukLit:0,br:0,unosi:[],isB,v};
+    if(!pv[v.id]) pv[v.id]={ukLit:0,ukKM:0,br:0,unosi:[],isB,v};
     pv[v.id].ukLit+=s.litara; pv[v.id].br++;
+    pv[v.id].ukKM+=izracunajTrosakStavke(s);
     if(val!=null) pv[v.id].unosi.push({val,lit:s.litara});
   }));
-  const rows=[['Registracija','Model','Firma','Tip','Broj točenja','Ukupno litara','Pređeno (km/mh)','Prosjek (L/100km ili L/mh)','Napomena']];
+  const rows=[['Registracija','Model','Firma','Tip','Broj točenja','Ukupno litara','Trošak (KM)','Pređeno (km/mh)','Prosjek (L/100km ili L/mh)','Napomena']];
   Object.values(pv).sort((a,b)=>b.ukLit-a.ukLit).forEach(r=>{
     const f=gF(r.v.firmaId),isB=r.isB;
     let predjeno='',prosjek='';
@@ -2872,10 +2902,10 @@ function exportPivotExcel(){
       const litZaProsjek=r.unosi.slice(0,-1).reduce((a,u)=>a+u.lit,0);
       if(predjeno>0) prosjek = isB ? +(litZaProsjek/predjeno).toFixed(2) : +(litZaProsjek/predjeno*100).toFixed(1);
     }
-    rows.push([r.v.reg, r.v.model||'', f?f.naziv:'?', tipL(r.v.tip), r.br, r.ukLit, predjeno, prosjek, 'Zadnje sipanje izuzeto iz prosjeka (još nepotrošeno)']);
+    rows.push([r.v.reg, r.v.model||'', f?f.naziv:'?', tipL(r.v.tip), r.br, r.ukLit, +r.ukKM.toFixed(2), predjeno, prosjek, 'Zadnje sipanje izuzeto iz prosjeka (još nepotrošeno)']);
   });
   const ws=XLSX.utils.aoa_to_sheet(rows);
-  ws['!cols']=[{wch:14},{wch:18},{wch:20},{wch:10},{wch:12},{wch:12},{wch:14},{wch:18},{wch:38}];
+  ws['!cols']=[{wch:14},{wch:18},{wch:20},{wch:10},{wch:12},{wch:12},{wch:12},{wch:14},{wch:18},{wch:38}];
   const wb=XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb,ws,'Pivot po vozilu');
   XLSX.writeFile(wb,`izvjestaj_pivot_${today()}.xlsx`);
