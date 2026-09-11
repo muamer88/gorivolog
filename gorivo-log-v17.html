@@ -486,18 +486,21 @@ body.driver-mode .app{padding-bottom:78px}
     <div class="card-title"><span class="card-title-left">📋 Nova otpremnica</span></div>
     <div class="grid4">
       <div class="fg"><label>Datum</label><input type="date" id="otp-dat"></div>
-      <div class="fg admin-only"><label>Cisterna</label><select id="otp-cist"><option value="">— odaberi —</option></select></div>
+      <div class="fg" id="otp-cist-wrap"><label>Cisterna</label><select id="otp-cist"><option value="">— odaberi —</option></select></div>
       <div class="fg">
         <label>Gradilište</label>
         <div style="display:flex;gap:8px">
           <select id="otp-grad" style="flex:1"><option value="">— odaberi —</option></select>
-          <button type="button" class="btn btn-qr" onclick="addNewGradiliste()" style="white-space:nowrap">➕ Novo</button>
+          <button type="button" class="btn btn-qr" id="otp-grad-novo-btn" style="display:none;white-space:nowrap" onclick="addNewGradiliste()">➕ Novo</button>
         </div>
       </div>
-      <div class="fg admin-only"><label>Vrsta goriva</label>
+      <div class="fg" id="otp-gor-wrap" style="display:none"><label>Vrsta goriva</label>
         <select id="otp-gor"></select>
       </div>
-      <div class="fg admin-only" style="grid-column:1/3"><label>Broj lista (ostaviti prazno = auto)</label><input type="text" id="otp-broj" placeholder="OTP-2026-xxx"></div>
+      <div class="fg" id="otp-broj-wrap" style="display:none;grid-column:1/3"><label>Broj lista (ostaviti prazno = auto)</label><input type="text" id="otp-broj" placeholder="OTP-2026-xxx"></div>
+      <div class="fg" style="grid-column:1/3;justify-content:flex-end">
+        <a href="#" onclick="toggleOtpNapredno();return false" style="font-size:11px;color:var(--mut2);text-decoration:underline" id="otp-napredno-link">⚙ Napredne opcije</a>
+      </div>
       <div class="fg" style="grid-column:3/5;justify-content:flex-end;padding-top:16px">
         <button class="btn btn-p btn-lg" onclick="startOtp()">▶ Počni unos stavki</button>
       </div>
@@ -1342,6 +1345,16 @@ function populateGoriva(){
 }
 
 // Populate selects
+// "Napredne opcije" - sakriva/prikazuje rijetko potrebna polja (vrsta goriva, ručni broj otpremnice, dodavanje gradilišta)
+// da svakodnevni unos (i za admina i za vozača) ostane što jednostavniji.
+function toggleOtpNapredno(){
+  const els=['otp-gor-wrap','otp-broj-wrap','otp-grad-novo-btn'].map(id=>document.getElementById(id));
+  const otvoreno = els[0] && els[0].style.display!=='none';
+  els.forEach(el=>{ if(el) el.style.display = otvoreno ? 'none' : (el.id==='otp-grad-novo-btn'?'inline-block':''); });
+  const link=document.getElementById('otp-napredno-link');
+  if(link) link.textContent = otvoreno ? '⚙ Napredne opcije' : '✕ Sakrij napredne opcije';
+}
+
 function populateAll(){
   populateGoriva();
   const isVozac = currentUser && currentUser.role==='vozac';
@@ -1351,8 +1364,11 @@ function populateAll(){
     const fv=el.options[0].outerHTML; el.innerHTML=fv;
     const izvor = (mojaC ? S.cistijerne.filter(c=>c.id===mojaC) : S.cistijerne);
     izvor.forEach(c=>{const st=cisternaStanje(c.id);el.innerHTML+=`<option value="${c.id}">${c.reg} — ${c.vozac||''} (${st.toFixed(0)} L)</option>`;});
-    if(mojaC && izvor.length===1) el.value=mojaC;
+    if(izvor.length===1) el.value=izvor[0].id;
   });
+  // Na "Nova otpremnica" formi - sakrij izbor cisterne ako i ovako nema šta da se bira (samo 1 cisterna ukupno)
+  const cistWrap=document.getElementById('otp-cist-wrap');
+  if(cistWrap) cistWrap.style.display = (S.cistijerne.length<=1) ? 'none' : '';
   // "Prima" strana transfera ostaje otvorena svima (gorivo se može prebaciti u bilo koju drugu cisternu)
   (()=>{const el=document.getElementById('tr-prima');if(!el)return;
     const fv=el.options[0].outerHTML; el.innerHTML=fv;
