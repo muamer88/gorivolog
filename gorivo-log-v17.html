@@ -748,21 +748,6 @@ body.driver-mode .app{padding-bottom:78px}
     <div class="card"><div class="card-title">🏢 Po firmi (sestrinske)</div><div id="rep-f"></div></div>
     <div class="card"><div class="card-title">📍 Po gradilištu</div><div id="rep-g"></div></div>
   </div>
-  <div class="card admin-only">
-    <div class="card-title">💰 Troškovnik goriva</div>
-    <div class="signal sig-tip">Trošak se računa po STVARNOJ cijeni sa fakture dobavljača — ako je gorivo stiglo preko transfera, prati se lanac unazad do originalne fakture. Stavke bez poznate cijene ne ulaze u iznos (ne izmišljamo brojeve).</div>
-    <div class="grid2" style="gap:14px">
-      <div>
-        <div style="font-weight:700;margin-bottom:6px;font-size:13px">Po gradilištu</div>
-        <div class="tw"><table><thead><tr><th>Gradilište</th><th>Litara</th><th>Trošak (KM)</th></tr></thead><tbody id="rep-trosak-grad"></tbody></table></div>
-      </div>
-      <div>
-        <div style="font-weight:700;margin-bottom:6px;font-size:13px">Po firmi</div>
-        <div class="tw"><table><thead><tr><th>Firma</th><th>Litara</th><th>Trošak (KM)</th></tr></thead><tbody id="rep-trosak-firma"></tbody></table></div>
-      </div>
-    </div>
-    <div style="margin-top:10px;font-size:13px;color:var(--mut2)" id="rep-trosak-ukupno"></div>
-  </div>
   <div class="card">
     <div class="card-title">🚛 Po tipu vozila</div>
     <div class="tw"><table><thead><tr><th>Tip</th><th>Vozila</th><th>Točenja</th><th>Ukupno litara</th></tr></thead><tbody id="rep-t"></tbody></table></div>
@@ -770,7 +755,7 @@ body.driver-mode .app{padding-bottom:78px}
   <div class="card">
     <div class="card-title">⛽ Potrošnja po vozilu</div>
     <div class="signal sig-tip">Prosjek L/100km računa se iz razlike prve i zadnje kilometraže u periodu. Litre zadnjeg (najnovijeg) sipanja NE ulaze u obračun prosjeka — to gorivo je tek sipano i još nije potrošeno na vožnju, ali se i dalje broji u ukupnoj koloni "Litara". Bagerima/mašinama se prikazuje L/moto-sat.</div>
-    <div class="tw"><table><thead><tr><th>Vozilo</th><th>Firma</th><th>Litara</th><th>Pređeno</th><th>Prosjek</th></tr></thead><tbody id="rep-potrosnja"></tbody></table></div>
+    <div class="tw"><table><thead><tr><th>Vozilo</th><th>Firma</th><th>Litara</th><th class="admin-only">Trošak (KM)</th><th>Pređeno</th><th>Prosjek</th></tr></thead><tbody id="rep-potrosnja"></tbody></table></div>
   </div>
   <div class="card">
     <div class="card-title">🏢 Treća lica — izvještaj</div>
@@ -2726,32 +2711,13 @@ function renderIzv(){
     <div class="stat"><div class="stat-n">${ukL.toLocaleString()}</div><div class="stat-l">Ukupno L</div></div>
     <div class="stat"><div class="stat-n">${dnevi}</div><div class="stat-l">Dana aktivno</div></div>`;
   // Po firmi
-  const fm={};all.forEach(o=>o.stavke.forEach(s=>{const v=gV(s.kamionId);if(!v)return;if(!fm[v.firmaId])fm[v.firmaId]={lit:0,br:0};fm[v.firmaId].lit+=s.litara;fm[v.firmaId].br++;}));
+  const fm={};all.forEach(o=>o.stavke.forEach(s=>{const vi=stavkaVehInfo(s);if(!vi.firmaId)return;if(!fm[vi.firmaId])fm[vi.firmaId]={lit:0,br:0,km:0};fm[vi.firmaId].lit+=s.litara;fm[vi.firmaId].br++;fm[vi.firmaId].km+=izracunajTrosakStavke(s);}));
   const fa=Object.entries(fm).sort((a,b)=>b[1].lit-a[1].lit);const mxF=fa[0]?.[1]?.lit||1;
-  document.getElementById('rep-f').innerHTML=fa.map(([fid,d])=>{const f=gF(fid);return`<div class="rep-item"><div style="display:flex;justify-content:space-between"><span style="font-weight:700">${f?f.naziv:'?'}</span><span class="tag t-l">${d.lit.toLocaleString()} L</span></div><div class="rep-bar-wrap"><div class="rep-bar" style="width:${d.lit/mxF*100}%;background:var(--acc3)"></div></div><div style="font-size:11px;color:var(--mut2);margin-top:3px">${d.br} točenja</div></div>`;}).join('')||'<div class="empty">Nema podataka</div>';
+  document.getElementById('rep-f').innerHTML=fa.map(([fid,d])=>{const f=gF(fid);return`<div class="rep-item"><div style="display:flex;justify-content:space-between"><span style="font-weight:700">${f?f.naziv:'?'}</span><span class="tag t-l">${d.lit.toLocaleString()} L${d.km>0?` · <span class="admin-only" style="display:inline">${d.km.toFixed(2)} KM</span>`:''}</span></div><div class="rep-bar-wrap"><div class="rep-bar" style="width:${d.lit/mxF*100}%;background:var(--acc3)"></div></div><div style="font-size:11px;color:var(--mut2);margin-top:3px">${d.br} točenja</div></div>`;}).join('')||'<div class="empty">Nema podataka</div>';
   // Po gradilištu
-  const gm={};all.forEach(o=>o.stavke.forEach(s=>{if(!gm[o.gradId])gm[o.gradId]={lit:0,br:0};gm[o.gradId].lit+=s.litara;gm[o.gradId].br++;}));
+  const gm={};all.forEach(o=>o.stavke.forEach(s=>{if(!gm[o.gradId])gm[o.gradId]={lit:0,br:0,km:0};gm[o.gradId].lit+=s.litara;gm[o.gradId].br++;gm[o.gradId].km+=izracunajTrosakStavke(s);}));
   const ga=Object.entries(gm).sort((a,b)=>b[1].lit-a[1].lit);const mxG=ga[0]?.[1]?.lit||1;
-  document.getElementById('rep-g').innerHTML=ga.map(([gid,d])=>{const g=gG(gid);return`<div class="rep-item"><div style="display:flex;justify-content:space-between"><span style="font-weight:700">${g?g.naziv:'?'}</span><span class="tag t-l">${d.lit.toLocaleString()} L</span></div><div class="rep-bar-wrap"><div class="rep-bar" style="width:${d.lit/mxG*100}%;background:var(--acc2)"></div></div><div style="font-size:11px;color:var(--mut2);margin-top:3px">${g?g.lok:''} · ${d.br} točenja</div></div>`;}).join('')||'<div class="empty">Nema podataka</div>';
-  // Troškovnik - po gradilištu i po firmi, koristi stvarnu cijenu sa fakture (prati transfere)
-  const trGrad={}, trFirma={};
-  let trUkLit=0, trUkKM=0, trBezCijene=0;
-  all.forEach(o=>{
-    o.stavke.forEach(s=>{
-      const trosak=izracunajTrosakStavke(s);
-      const vi=stavkaVehInfo(s);
-      trUkLit+=s.litara; trUkKM+=trosak;
-      if(trosak===0) trBezCijene+=s.litara;
-      if(!trGrad[o.gradId]) trGrad[o.gradId]={lit:0,km:0};
-      trGrad[o.gradId].lit+=s.litara; trGrad[o.gradId].km+=trosak;
-      const fid=vi.firmaId||'_bez';
-      if(!trFirma[fid]) trFirma[fid]={lit:0,km:0};
-      trFirma[fid].lit+=s.litara; trFirma[fid].km+=trosak;
-    });
-  });
-  document.getElementById('rep-trosak-grad').innerHTML=Object.entries(trGrad).sort((a,b)=>b[1].km-a[1].km).map(([gid,d])=>{const g=gG(gid);return`<tr><td>${g?g.naziv:'?'}</td><td>${d.lit.toLocaleString()} L</td><td><b>${d.km.toFixed(2)} KM</b></td></tr>`;}).join('')||'<tr><td colspan="3" style="text-align:center;color:var(--mut2)">Nema podataka</td></tr>';
-  document.getElementById('rep-trosak-firma').innerHTML=Object.entries(trFirma).sort((a,b)=>b[1].km-a[1].km).map(([fid,d])=>{const f=fid==='_bez'?null:gF(fid);return`<tr><td>${f?f.naziv:'Bez firme'}</td><td>${d.lit.toLocaleString()} L</td><td><b>${d.km.toFixed(2)} KM</b></td></tr>`;}).join('')||'<tr><td colspan="3" style="text-align:center;color:var(--mut2)">Nema podataka</td></tr>';
-  document.getElementById('rep-trosak-ukupno').innerHTML=`Ukupno: <b style="color:var(--acc)">${trUkKM.toFixed(2)} KM</b> za ${trUkLit.toLocaleString()} L`+(trBezCijene>0?` · <span style="color:var(--acc2)">⚠ ${trBezCijene.toFixed(0)}L bez poznate cijene (nije uračunato)</span>`:'');
+  document.getElementById('rep-g').innerHTML=ga.map(([gid,d])=>{const g=gG(gid);return`<div class="rep-item"><div style="display:flex;justify-content:space-between"><span style="font-weight:700">${g?g.naziv:'?'}</span><span class="tag t-l">${d.lit.toLocaleString()} L${d.km>0?` · <span class="admin-only" style="display:inline">${d.km.toFixed(2)} KM</span>`:''}</span></div><div class="rep-bar-wrap"><div class="rep-bar" style="width:${d.lit/mxG*100}%;background:var(--acc2)"></div></div><div style="font-size:11px;color:var(--mut2);margin-top:3px">${g?g.lok:''} · ${d.br} točenja</div></div>`;}).join('')||'<div class="empty">Nema podataka</div>';
   // Po tipu
   const tm={kamion:{lit:0,br:0,vz:new Set()},bager:{lit:0,br:0,vz:new Set()},malo:{lit:0,br:0,vz:new Set()}};
   all.forEach(o=>o.stavke.forEach(s=>{const v=gV(s.kamionId);if(!v)return;const t=v.tip;if(!tm[t])tm[t]={lit:0,br:0,vz:new Set()};tm[t].lit+=s.litara;tm[t].br++;tm[t].vz.add(v.id);}));
@@ -2764,13 +2730,14 @@ function renderIzv(){
 
 // ═══ POTROŠNJA PO VOZILU (L/100km ili L/moto-sat) ═══
 function renderPotrosnjaPoVozilu(all){
-  const pv={}; // vehId -> {ukLit (sve, za prikaz), unosi:[{val,lit}], isB, v}
+  const pv={}; // vehId -> {ukLit (sve, za prikaz), ukKM, unosi:[{val,lit}], isB, v}
   all.forEach(o=>o.stavke.forEach(s=>{
     const v=gV(s.kamionId);if(!v)return;
     const isB=v.tip==='bager';
     const val=isB?(s.motoSati!=null?s.motoSati:s.motoSatiK):(s.km!=null?s.km:s.kmKraj);
-    if(!pv[v.id]) pv[v.id]={ukLit:0,unosi:[],isB,v};
+    if(!pv[v.id]) pv[v.id]={ukLit:0,ukKM:0,unosi:[],isB,v};
     pv[v.id].ukLit+=s.litara;
+    pv[v.id].ukKM+=izracunajTrosakStavke(s);
     if(val!=null) pv[v.id].unosi.push({val,lit:s.litara});
   }));
   const rows=Object.values(pv).sort((a,b)=>b.ukLit-a.ukLit);
@@ -2786,8 +2753,8 @@ function renderPotrosnjaPoVozilu(all){
         prosjek = r.isB ? `${(litZaProsjek/predjeno).toFixed(2)} L/mh` : `${(litZaProsjek/predjeno*100).toFixed(1)} L/100km`;
       }
     }
-    return `<tr><td><b>${r.v.reg}</b><br><span style="font-size:11px;color:var(--mut2)">${r.v.model||''}</span></td><td style="font-size:12px">${f?f.naziv:'?'}</td><td><span class="tag t-l">${r.ukLit.toLocaleString()} L</span></td><td>${predjeno!=null?predjeno.toLocaleString()+(r.isB?' mh':' km'):'—'}</td><td><b>${prosjek}</b></td></tr>`;
-  }).join('') || '<tr><td colspan="5" style="text-align:center;color:var(--mut2)">Nema podataka za odabrani period</td></tr>';
+    return `<tr><td><b>${r.v.reg}</b><br><span style="font-size:11px;color:var(--mut2)">${r.v.model||''}</span></td><td style="font-size:12px">${f?f.naziv:'?'}</td><td><span class="tag t-l">${r.ukLit.toLocaleString()} L</span></td><td class="admin-only"><b>${r.ukKM.toFixed(2)} KM</b></td><td>${predjeno!=null?predjeno.toLocaleString()+(r.isB?' mh':' km'):'—'}</td><td><b>${prosjek}</b></td></tr>`;
+  }).join('') || '<tr><td colspan="6" style="text-align:center;color:var(--mut2)">Nema podataka za odabrani period</td></tr>';
 }
 
 // ═══ TREĆA LICA IZVJEŠTAJ ═══
