@@ -486,7 +486,7 @@ body.driver-mode .app{padding-bottom:78px}
     <div class="card-title"><span class="card-title-left">📋 Nova otpremnica</span></div>
     <div class="grid4">
       <div class="fg"><label>Datum</label><input type="date" id="otp-dat"></div>
-      <div class="fg"><label>Cisterna</label><select id="otp-cist"><option value="">— odaberi —</option></select></div>
+      <div class="fg admin-only"><label>Cisterna</label><select id="otp-cist"><option value="">— odaberi —</option></select></div>
       <div class="fg">
         <label>Gradilište</label>
         <div style="display:flex;gap:8px">
@@ -494,10 +494,10 @@ body.driver-mode .app{padding-bottom:78px}
           <button type="button" class="btn btn-qr" onclick="addNewGradiliste()" style="white-space:nowrap">➕ Novo</button>
         </div>
       </div>
-      <div class="fg"><label>Vrsta goriva</label>
+      <div class="fg admin-only"><label>Vrsta goriva</label>
         <select id="otp-gor"></select>
       </div>
-      <div class="fg" style="grid-column:1/3"><label>Broj lista (ostaviti prazno = auto)</label><input type="text" id="otp-broj" placeholder="OTP-2026-xxx"></div>
+      <div class="fg admin-only" style="grid-column:1/3"><label>Broj lista (ostaviti prazno = auto)</label><input type="text" id="otp-broj" placeholder="OTP-2026-xxx"></div>
       <div class="fg" style="grid-column:3/5;justify-content:flex-end;padding-top:16px">
         <button class="btn btn-p btn-lg" onclick="startOtp()">▶ Počni unos stavki</button>
       </div>
