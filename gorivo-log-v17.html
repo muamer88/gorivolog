@@ -1318,6 +1318,16 @@ function renderMojaIstorija(){
       zapisi.push({datum:o.datum,vrijeme:s.vrijeme||'',kome:s.reg+(f?' — '+f.naziv:''),gdje:'',litara:s.litara,vrsta:'Treće lice',otpId:o.id,tip:'otpremnice3',brojOtp:o.brojOtp});
     });
   });
+  S.transferi.filter(t=>!t.stornirano && (t.cistijernDajeId===cid || t.cistijernPrimaId===cid)).forEach(t=>{
+    const jaDajem = t.cistijernDajeId===cid;
+    const drugaC = gC(jaDajem?t.cistijernPrimaId:t.cistijernDajeId);
+    zapisi.push({
+      datum:(t.datum||'').split('T')[0], vrijeme:(t.datum||'').split('T')[1]||'',
+      kome:(jaDajem?'→ Transfer u cisternu ':'← Transfer iz cisterne ')+(drugaC?drugaC.reg:'?'),
+      gdje:t.lokacija||'', litara:t.litara, vrsta:jaDajem?'Transfer (dao)':'Transfer (primio)',
+      otpId:t.id, tip:'transfer', brojOtp:'TRANSFER'
+    });
+  });
   zapisi.sort((a,b)=>(b.datum+b.vrijeme).localeCompare(a.datum+a.vrijeme));
   if(!zapisi.length){el.innerHTML='<div class="empty">Još nema unosa sa tvoje cisterne</div>';return;}
   const ukupno=zapisi.reduce((a,z)=>a+z.litara,0);
@@ -1327,11 +1337,39 @@ function renderMojaIstorija(){
         <span style="font-weight:700">${z.kome}</span>
         <div style="display:flex;align-items:center;gap:6px;white-space:nowrap">
           <span class="tag t-l">${z.litara} L</span>
-          <button class="btn btn-s" style="padding:4px 9px;font-size:11px" onclick="${z.tip==='otpremnice3'?'printTreca':'printOtp'}('${z.otpId}')">🖨</button>
+          <button class="btn btn-s" style="padding:4px 9px;font-size:11px" onclick="${z.tip==='transfer'?`printTransfer('${z.otpId}')`:z.tip==='otpremnice3'?`printTreca('${z.otpId}')`:`printOtp('${z.otpId}')`}">🖨</button>
         </div>
       </div>
-      <div style="font-size:11px;color:var(--mut2);margin-top:3px">${z.brojOtp} · ${z.datum} ${z.vrijeme?'· 🕐 '+z.vrijeme:''} ${z.gdje?'· 📍 '+z.gdje:''} · <span class="tag ${z.vrsta==='Treće lice'?'t-b':'t-ok'}" style="font-size:10px">${z.vrsta}</span></div>
+      <div style="font-size:11px;color:var(--mut2);margin-top:3px">${z.brojOtp!=='TRANSFER'?z.brojOtp+' · ':''}${z.datum} ${z.vrijeme?'· 🕐 '+z.vrijeme:''} ${z.gdje?'· 📍 '+z.gdje:''} · <span class="tag ${z.vrsta==='Treće lice'?'t-b':z.vrsta.startsWith('Transfer')?'t-warn':'t-ok'}" style="font-size:10px">${z.vrsta}</span></div>
     </div>`).join('');
+}
+
+function printTransfer(id){
+  const t=S.transferi.find(x=>x.id===id);if(!t)return;
+  document.getElementById('print-receipt-btn').style.display='none';
+  const rsTag=document.getElementById('receiptPageStyle');if(rsTag)rsTag.textContent='';
+  const cd=gC(t.cistijernDajeId),cp=gC(t.cistijernPrimaId),mf=S.mojaFirma;
+  document.getElementById('print-title').textContent='Transfer goriva';
+  document.getElementById('print-body').innerHTML=`
+  <div class="otp">
+    <div class="otp-top">
+      <div class="otp-co"><img src="logo.png" style="height:34px;width:auto;display:block;margin-bottom:5px" onerror="this.style.display='none'"><strong>${mf.naziv||'[Vaša firma]'}</strong>${mf.adresa||''}<br>${mf.idBroj?'ID: '+mf.idBroj:''} ${mf.tel?'| Tel: '+mf.tel:''}<br>${mf.email||''}</div>
+      <div><div class="otp-ttl">TRANSFER GORIVA</div><div style="font-family:monospace;font-size:12px;text-align:right">${t.id.slice(0,10)}</div><div style="font-size:10px;color:#666;text-align:right">${(t.datum||'').replace('T',' ')}</div></div>
+    </div>
+    <div class="otp-meta">
+      <div class="otp-mb"><div class="otp-ml">Cisterna — DAJE</div><div class="otp-mv">${cd?cd.reg:'?'}</div><div class="otp-ms">${cd?cd.vozac||'':''}</div></div>
+      <div class="otp-mb"><div class="otp-ml">Cisterna — PRIMA</div><div class="otp-mv">${cp?cp.reg:'?'}</div><div class="otp-ms">${cp?cp.vozac||'':''}</div></div>
+      <div class="otp-mb"><div class="otp-ml">Litara</div><div class="otp-mv">${t.litara} L</div></div>
+      <div class="otp-mb"><div class="otp-ml">Lokacija</div><div class="otp-mv" style="font-size:9px">${t.lokacija||'—'}</div></div>
+    </div>
+    <div class="otp-sigs">
+      <div class="otp-sig"><div class="otp-sig-lbl">Vozač — daje</div>${t.sig1?`<img src="${t.sig1}" style="height:38px;width:auto;background:#fff;margin:3px 0">`:'<div class="otp-sig-line"></div>'}<div class="otp-sig-nm">${cd?cd.vozac||'':''}</div></div>
+      <div class="otp-sig"><div class="otp-sig-lbl">Vozač — prima</div>${t.sig2?`<img src="${t.sig2}" style="height:38px;width:auto;background:#fff;margin:3px 0">`:'<div class="otp-sig-line"></div>'}<div class="otp-sig-nm">${cp?cp.vozac||'':''}</div></div>
+      <div class="otp-sig"><div class="otp-sig-lbl">Pečat i datum</div><div class="otp-sig-line"></div></div>
+    </div>
+    <div class="otp-foot"><span>${mf.naziv||''} | ${mf.adresa||''}</span><span>${(t.datum||'').replace('T',' ')} | GorivoLog v4</span></div>
+  </div>`;
+  openModal('printModal');
 }
 
 function populateGoriva(){
@@ -2113,10 +2151,10 @@ async function spremiTr(){
 function renderTr(){
   const el=document.getElementById('lst-tr');
   if(!S.transferi.length){el.innerHTML='<div class="empty">Nema transfera</div>';return;}
-  el.innerHTML='<div class="tw"><table><thead><tr><th>Datum</th><th>Daje</th><th>Prima</th><th>Litara</th><th>Lokacija</th></tr></thead><tbody>'+
+  el.innerHTML='<div class="tw"><table><thead><tr><th>Datum</th><th>Daje</th><th>Prima</th><th>Litara</th><th>Lokacija</th><th></th></tr></thead><tbody>'+
     [...S.transferi].reverse().map(t=>{
       const cd=gC(t.cistijernDajeId),cp=gC(t.cistijernPrimaId);
-      return`<tr><td class="mono">${(t.datum||'').replace('T',' ')}</td><td><span class="tag t-warn">${cd?cd.reg:'?'}</span></td><td><span class="tag t-ok">${cp?cp.reg:'?'}</span></td><td><span class="tag t-l">${t.litara}L</span></td><td style="font-size:12px;color:var(--mut2)">${t.lokacija||'—'}</td></tr>`;
+      return`<tr><td class="mono">${(t.datum||'').replace('T',' ')}</td><td><span class="tag t-warn">${cd?cd.reg:'?'}</span></td><td><span class="tag t-ok">${cp?cp.reg:'?'}</span></td><td><span class="tag t-l">${t.litara}L</span></td><td style="font-size:12px;color:var(--mut2)">${t.lokacija||'—'}</td><td><button class="btn btn-pr" style="padding:5px 9px;font-size:11px" onclick="printTransfer('${t.id}')">🖨</button></td></tr>`;
     }).join('')+'</tbody></table></div>';
 }
 
