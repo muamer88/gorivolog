@@ -491,7 +491,7 @@ body.driver-mode .app{padding-bottom:78px}
         <label>Gradilište</label>
         <div style="display:flex;gap:8px">
           <select id="otp-grad" style="flex:1"><option value="">— odaberi —</option></select>
-          <button type="button" class="btn btn-qr" id="otp-grad-novo-btn" style="display:none;white-space:nowrap" onclick="addNewGradiliste()">➕ Novo</button>
+          <button type="button" class="btn btn-qr" id="otp-grad-novo-btn" style="white-space:nowrap" onclick="addNewGradiliste()">➕ Novo</button>
         </div>
       </div>
       <div class="fg" id="otp-gor-wrap" style="display:none"><label>Vrsta goriva</label>
@@ -1348,9 +1348,9 @@ function populateGoriva(){
 // "Napredne opcije" - sakriva/prikazuje rijetko potrebna polja (vrsta goriva, ručni broj otpremnice, dodavanje gradilišta)
 // da svakodnevni unos (i za admina i za vozača) ostane što jednostavniji.
 function toggleOtpNapredno(){
-  const els=['otp-gor-wrap','otp-broj-wrap','otp-grad-novo-btn'].map(id=>document.getElementById(id));
+  const els=['otp-gor-wrap','otp-broj-wrap'].map(id=>document.getElementById(id));
   const otvoreno = els[0] && els[0].style.display!=='none';
-  els.forEach(el=>{ if(el) el.style.display = otvoreno ? 'none' : (el.id==='otp-grad-novo-btn'?'inline-block':''); });
+  els.forEach(el=>{ if(el) el.style.display = otvoreno ? 'none' : ''; });
   const link=document.getElementById('otp-napredno-link');
   if(link) link.textContent = otvoreno ? '⚙ Napredne opcije' : '✕ Sakrij napredne opcije';
 }
