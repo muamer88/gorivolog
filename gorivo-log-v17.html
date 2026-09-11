@@ -1083,6 +1083,7 @@ body.driver-mode .app{padding-bottom:78px}
     <div class="ptbar">
       <span style="color:var(--mut2);font-size:12px;margin-right:auto" id="print-title">Otpremnica</span>
       <button class="btn btn-s" id="print-receipt-btn" style="display:none;padding:6px 13px;font-size:12px" onclick="prebaciNaUskiFormat()">🧾 Uska traka</button>
+      <button class="btn btn-s admin-only" id="print-poreklo-btn" style="display:none;padding:6px 13px;font-size:12px" onclick="prikaziPorekloGoriva()">🧾 Porijeklo goriva</button>
       <button class="btn btn-pr" onclick="window.print()">🖨 Štampaj / PDF</button>
       <button class="btn btn-s" style="padding:6px 13px;font-size:12px" onclick="closeModal('printModal')">✕</button>
     </div>
@@ -1365,6 +1366,7 @@ function renderMojaIstorija(){
 function printTransfer(id){
   const t=S.transferi.find(x=>x.id===id);if(!t)return;
   document.getElementById('print-receipt-btn').style.display='none';
+  document.getElementById('print-poreklo-btn').style.display='none';
   const rsTag=document.getElementById('receiptPageStyle');if(rsTag)rsTag.textContent='';
   const cd=gC(t.cistijernDajeId),cp=gC(t.cistijernPrimaId),mf=S.mojaFirma;
   document.getElementById('print-title').textContent='Transfer goriva';
@@ -2031,6 +2033,7 @@ function printTreca(id,obj){
   document.getElementById('print-receipt-btn').style.display='inline-block';
   document.getElementById('print-receipt-btn').textContent='🧾 Uska traka';
   document.getElementById('print-receipt-btn').onclick=prebaciNaUskiFormat;
+  document.getElementById('print-poreklo-btn').style.display='inline-block';
   const rsTag=document.getElementById('receiptPageStyle');if(rsTag)rsTag.textContent='';
   const c=gC(o.cistijernId),f=S.treceLiceFirme.find(x=>x.id===o.treceLiceId),mf=S.mojaFirma;
   const ukL=o.stavke.reduce((a,s)=>a+s.litara,0);
@@ -2122,6 +2125,29 @@ function renderReceiptHTML(o, tip){
       <div style="text-align:center;font-size:9px;margin-top:12px">${o.brojOtp} · ${o.datum}<br>GorivoLog</div>
     </div>`;
   }
+}
+
+// Interni pregled (admin) - prikazuje sa koje fakture/transfera potiče gorivo za svaku stavku.
+// Odvojeno od standardne otpremnice koja ide primaocu, da ta ostane kompaktna i bez internih podataka o nabavci.
+function prikaziPorekloGoriva(){
+  const src=window._printSource;if(!src)return;
+  const o=src.obj;
+  const c=gC(o.cistijernId);
+  const rows=o.stavke.map((s,i)=>{
+    const naziv = src.tip==='otpremnice3' ? s.reg : (stavkaVehInfo(s).reg);
+    return `<tr><td>${i+1}</td><td>${naziv}</td><td>${s.vozacIme||s.vozac||'—'}</td><td style="text-align:right">${s.litara}L</td><td style="font-size:11px">${opisAlokacije(s.izvorUlaza)}</td></tr>`;
+  }).join('');
+  document.getElementById('print-body').innerHTML=`<div style="padding:20px;color:#000;font-family:Arial,sans-serif">
+    <h3 style="margin-bottom:4px">🧾 Interni pregled — porijeklo goriva</h3>
+    <p style="color:#666;font-size:12px;margin-bottom:12px">Otpremnica ${o.brojOtp} · ${o.datum} · Cisterna ${c?c.reg:'?'} — samo za internu upotrebu, ne za primaoca</p>
+    <table style="width:100%;border-collapse:collapse" border="1" cellpadding="6">
+      <thead><tr style="background:#eee"><th>#</th><th>Vozilo/Reg</th><th>Vozač</th><th>Litara</th><th>Porijeklo (faktura/transfer)</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  </div>`;
+  const btn=document.getElementById('print-poreklo-btn');
+  btn.textContent='📄 Nazad na otpremnicu';
+  btn.onclick=()=>{ if(src.tip==='otpremnice3') printTreca(src.obj.id,src.obj); else printOtp(src.obj.id,src.obj); };
 }
 
 function prebaciNaUskiFormat(){
@@ -2299,6 +2325,7 @@ function prikaziPotrosnjuSerije(ulazId){
     </table>
   </div>`;
   document.getElementById('print-receipt-btn').style.display='none';
+  document.getElementById('print-poreklo-btn').style.display='none';
   openModal('printModal');
 }
 
@@ -3061,6 +3088,7 @@ function showQR(id){
       <p style="font-size:11px;color:#888">Skeniraj za unos točenja</p>
     </div>`;
   document.getElementById('print-receipt-btn').style.display='none';
+  document.getElementById('print-poreklo-btn').style.display='none';
   openModal('printModal');
   setTimeout(()=>{
     const el=document.getElementById('qr-single');
@@ -3079,6 +3107,7 @@ function printAllQR(){
       <div class="qr-grid" id="qr-all-grid"></div>
     </div>`;
   document.getElementById('print-receipt-btn').style.display='none';
+  document.getElementById('print-poreklo-btn').style.display='none';
   openModal('printModal');
   setTimeout(()=>{
     const grid=document.getElementById('qr-all-grid');
@@ -3105,6 +3134,7 @@ function printOtp(id,obj){
   document.getElementById('print-receipt-btn').style.display='inline-block';
   document.getElementById('print-receipt-btn').textContent='🧾 Uska traka';
   document.getElementById('print-receipt-btn').onclick=prebaciNaUskiFormat;
+  document.getElementById('print-poreklo-btn').style.display='inline-block';
   const rsTag=document.getElementById('receiptPageStyle');if(rsTag)rsTag.textContent='';
   const c=gC(o.cistijernId),g=gG(o.gradId),mf=S.mojaFirma;
   const ukL=o.stavke.reduce((a,s)=>a+s.litara,0);
