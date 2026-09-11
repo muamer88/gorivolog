@@ -1209,20 +1209,38 @@ function fifoAlociraj(cid, potrebno){
   return alokacija;
 }
 
-// Prikaz za korisnika: "AA00-... (3.2.2026) 350L" ili "nepoznato porijeklo" ako nema serije
+// Prikaz za korisnika: "AA00-... (3.2.2026) 350L" ili "nepoznato porijeklo" ako nema serije.
+// Prati lanac UNAZAD kroz eventualne transfere, sve do originalne fakture dobavljača.
+function resolveChainLeaf(ulazId, litara, depth){
+  if(depth>8) return [{opis:'(predugačak lanac transfera)',litara}];
+  if(!ulazId) return [{opis:'nepoznato porijeklo',litara}];
+  if(String(ulazId).startsWith('transfer:')){
+    const tid=ulazId.split(':')[1];
+    const t=S.transferi.find(y=>y.id===tid);
+    if(!t||!t.izvorUlaza||!t.izvorUlaza.length){
+      const cd=t?gC(t.cistijernDajeId):null;
+      return [{opis:`transfer iz cisterne ${cd?cd.reg:'?'} (${t?(t.datum||'').split('T')[0]:'?'}) — dalje porijeklo nepoznato`,litara}];
+    }
+    const totalT=t.izvorUlaza.reduce((a,x)=>a+x.litara,0)||1;
+    let rez=[];
+    t.izvorUlaza.forEach(src=>{
+      const udio=(src.litara/totalT)*litara;
+      if(udio<=0.001)return;
+      rez=rez.concat(resolveChainLeaf(src.ulazId,udio,depth+1));
+    });
+    return rez;
+  }
+  const u=S.ulazi.find(y=>y.id===ulazId);
+  if(!u) return [{opis:'(obrisana serija)',litara}];
+  return [{opis:`${(u.datum||'').split('T')[0]} — ${u.dobav||'?'} (${u.brDob||'bez br.'})`,litara}];
+}
 function opisAlokacije(izvorUlaza){
   if(!izvorUlaza||!izvorUlaza.length) return '—';
-  return izvorUlaza.map(x=>{
-    if(!x.ulazId) return `${x.litara}L (nepoznato porijeklo)`;
-    if(String(x.ulazId).startsWith('transfer:')){
-      const tid=x.ulazId.split(':')[1];
-      const t=S.transferi.find(y=>y.id===tid);
-      const cd=t?gC(t.cistijernDajeId):null;
-      return t?`${x.litara}L prebačeno iz cisterne ${cd?cd.reg:'?'} (${(t.datum||'').split('T')[0]})`:`${x.litara}L (obrisan transfer)`;
-    }
-    const u=S.ulazi.find(y=>y.id===x.ulazId);
-    return u ? `${x.litara}L iz ${(u.datum||'').split('T')[0]} — ${u.dobav||'?'} (${u.brDob||'bez br.'})` : `${x.litara}L (obrisana serija)`;
-  }).join(', ');
+  let sve=[];
+  izvorUlaza.forEach(x=>{ sve=sve.concat(resolveChainLeaf(x.ulazId,x.litara,0)); });
+  const grupe={};
+  sve.forEach(s=>{ grupe[s.opis]=(grupe[s.opis]||0)+s.litara; });
+  return Object.entries(grupe).map(([opis,lit])=>`${lit.toFixed(1)}L iz ${opis}`).join(', ');
 }
 
 // ═══ STANJE CISTERNE (spriječava sipanje "u minus") ═══
@@ -2240,15 +2258,20 @@ function renderUl(){
     }).join('')+'</tbody></table></div>';
 }
 
-function prikaziPotrosnjuSerije(ulazId){
-  const u=S.ulazi.find(x=>x.id===ulazId);if(!u)return;
-  const c=gC(u.cistijernId);
-  const potrosnja=[];
+// Prati SVE što se desilo sa datom serijom/transferom - rekurzivno, kroz eventualne dalje transfere,
+// sve do krajnjeg istakanja. searchKey je ili pravi ulazId (faktura) ili 'transfer:ID' za dublje nivoe.
+function tragZaSerijom(searchKey, poreklo){
+  let rezultat=[];
   const skeniraj=(arr,vrsta)=>{
     arr.forEach(rec=>{
       (rec.stavke||[rec]).forEach(s=>{
         (s.izvorUlaza||[]).forEach(x=>{
-          if(x.ulazId===ulazId) potrosnja.push({datum:rec.datum,vrsta,litara:x.litara,ko:s.vozacIme||s.reg||(rec.cistijernPrimaId?'transfer u '+(gC(rec.cistijernPrimaId)?.reg||'?'):'')});
+          if(x.ulazId===searchKey){
+            rezultat.push({datum:rec.datum,vrsta,litara:x.litara,ko:s.vozacIme||s.reg||(rec.cistijernPrimaId?'transfer u '+(gC(rec.cistijernPrimaId)?.reg||'?'):''),poreklo});
+            if(vrsta==='Transfer'){
+              rezultat=rezultat.concat(tragZaSerijom('transfer:'+rec.id, (poreklo?poreklo+' → ':'')+'preko transfera '+(rec.datum||'').split('T')[0]));
+            }
+          }
         });
       });
     });
@@ -2256,6 +2279,13 @@ function prikaziPotrosnjuSerije(ulazId){
   skeniraj(S.otpremnice,'Otpremnica');
   skeniraj(S.otpremnice3,'Treća lica');
   skeniraj(S.transferi,'Transfer');
+  return rezultat;
+}
+
+function prikaziPotrosnjuSerije(ulazId){
+  const u=S.ulazi.find(x=>x.id===ulazId);if(!u)return;
+  const c=gC(u.cistijernId);
+  const potrosnja=tragZaSerijom(u.id, '');
   potrosnja.sort((a,b)=>(a.datum||'').localeCompare(b.datum||''));
   const potroseno=potrosenoPoSerijama();
   const preostalo=u.litara-(potroseno[u.id]||0);
@@ -2264,8 +2294,8 @@ function prikaziPotrosnjuSerije(ulazId){
     <p><b>Cisterna:</b> ${c?c.reg:'?'} &nbsp; <b>Ukupno u seriji:</b> ${u.litara} L &nbsp; <b>Preostalo:</b> ${preostalo.toFixed(1)} L</p>
     <p><b>Broj fakture:</b> ${u.brFakture||'—'} &nbsp; <b>Cijena:</b> ${u.cijenaLitra?u.cijenaLitra+' KM/L':'—'} &nbsp; <b>Br. otpremnice dobavljača:</b> ${u.brDob||'—'}</p>
     <table style="width:100%;border-collapse:collapse;margin-top:10px" border="1" cellpadding="6">
-      <thead><tr style="background:#eee"><th>Datum</th><th>Vrsta</th><th>Kome/gdje</th><th>Litara</th></tr></thead>
-      <tbody>${potrosnja.length?potrosnja.map(p=>`<tr><td>${(p.datum||'').replace('T',' ')}</td><td>${p.vrsta}</td><td>${p.ko||'—'}</td><td>${p.litara}L</td></tr>`).join(''):'<tr><td colspan="4" style="text-align:center;color:#999">Još ništa nije potrošeno iz ove serije</td></tr>'}</tbody>
+      <thead><tr style="background:#eee"><th>Datum</th><th>Vrsta</th><th>Kome/gdje</th><th>Litara</th><th>Put (ako je preko transfera)</th></tr></thead>
+      <tbody>${potrosnja.length?potrosnja.map(p=>`<tr><td>${(p.datum||'').replace('T',' ')}</td><td>${p.vrsta}</td><td>${p.ko||'—'}</td><td>${p.litara}L</td><td style="font-size:11px;color:#666">${p.poreklo||'— direktno —'}</td></tr>`).join(''):'<tr><td colspan="5" style="text-align:center;color:#999">Još ništa nije potrošeno iz ove serije</td></tr>'}</tbody>
     </table>
   </div>`;
   document.getElementById('print-receipt-btn').style.display='none';
