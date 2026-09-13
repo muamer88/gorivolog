@@ -1,6 +1,6 @@
 // GorivoLog Service Worker — omogućava da se aplikacija otvori i bez interneta
 // (nakon što je bar jednom uspješno učitana dok je bilo signala).
-const CACHE_NAME = 'gorivolog-v2';
+const CACHE_NAME = 'gorivolog-v3';
 const APP_SHELL = [
   './gorivo-log-v17.html',
   './manifest.json',
@@ -8,7 +8,8 @@ const APP_SHELL = [
   'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js',
   'https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js',
   'https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js',
-  'https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js'
+  'https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js',
+  'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js'
 ];
 
 self.addEventListener('install', event => {
