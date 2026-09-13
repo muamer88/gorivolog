@@ -12,6 +12,7 @@
 <title>GorivoLog v4</title>
 <!-- SheetJS za Excel import/export -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <!-- QR Code generisanje -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <!-- QR Code skeniranje kamerom -->
@@ -1113,6 +1114,7 @@ try{
       <span style="color:var(--mut2);font-size:12px;margin-right:auto" id="print-title">Otpremnica</span>
       <button class="btn btn-s" id="print-receipt-btn" style="display:none;padding:6px 13px;font-size:12px" onclick="prebaciNaUskiFormat()">🧾 Uska traka</button>
       <button class="btn btn-s admin-only" id="print-poreklo-btn" style="display:none;padding:6px 13px;font-size:12px" onclick="prikaziPorekloGoriva()">🧾 Porijeklo goriva</button>
+      <button class="btn btn-s" id="print-share-btn" style="padding:6px 13px;font-size:12px" onclick="podijeliOtpremnicu()">📤 Podijeli</button>
       <button class="btn btn-pr" onclick="window.print()">🖨 Štampaj / PDF</button>
       <button class="btn btn-s" style="padding:6px 13px;font-size:12px" onclick="closeModal('printModal')">✕</button>
     </div>
@@ -2233,6 +2235,40 @@ function prikaziPorekloGoriva(){
   const btn=document.getElementById('print-poreklo-btn');
   btn.textContent='📄 Nazad na otpremnicu';
   btn.onclick=()=>{ if(src.tip==='otpremnice3') printTreca(src.obj.id,src.obj); else printOtp(src.obj.id,src.obj); };
+}
+
+// ═══ DIJELI (Viber/WhatsApp/itd preko sistemskog menija za dijeljenje) ═══
+async function podijeliOtpremnicu(){
+  if(typeof html2canvas==='undefined'){ toast('⚠ Učitava se biblioteka za dijeljenje, pokušaj za sekundu...',3000); return; }
+  const el=document.getElementById('print-body');
+  if(!el || !el.innerHTML.trim()){ toast('⚠ Nema šta da se podijeli.'); return; }
+  const btn=document.getElementById('print-share-btn');
+  btn.disabled=true; btn.textContent='⏳ Pripremam...';
+  try{
+    const canvas=await html2canvas(el,{backgroundColor:'#ffffff',scale:2});
+    canvas.toBlob(async (blob)=>{
+      btn.disabled=false; btn.textContent='📤 Podijeli';
+      if(!blob){ toast('⚠ Greška pri pripremi slike.'); return; }
+      const naslov=(document.getElementById('print-title')?.textContent||'Otpremnica');
+      const naziv=naslov.replace(/[^a-zA-Z0-9]/g,'_');
+      const file=new File([blob], naziv+'.png', {type:'image/png'});
+      if(navigator.canShare && navigator.canShare({files:[file]})){
+        try{
+          await navigator.share({files:[file], title:naslov});
+        }catch(e){
+          if(e.name!=='AbortError') toast('⚠ Dijeljenje nije uspjelo: '+e.message,4000);
+        }
+      }else{
+        const url=URL.createObjectURL(blob);
+        const a=document.createElement('a'); a.href=url; a.download=naziv+'.png'; a.click();
+        URL.revokeObjectURL(url);
+        toast('Dijeljenje nije podržano na ovom uređaju — slika je preuzeta, pošalji je ručno iz Galerije.',5000);
+      }
+    }, 'image/png');
+  }catch(e){
+    btn.disabled=false; btn.textContent='📤 Podijeli';
+    toast('⚠ Greška: '+e.message,4000);
+  }
 }
 
 function prebaciNaUskiFormat(){
