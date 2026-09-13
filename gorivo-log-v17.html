@@ -147,6 +147,14 @@
   --red:#f04a4a;--redbg:#1e0e0e;--greenbg:#0e1e0e;
   --radius:7px;
 }
+body.light-mode{
+  --bg:#f4f6f1;--surf:#ffffff;--surf2:#eef1ea;--surf3:#e4e8de;
+  --bord:#dde2d6;--bord2:#c7cebd;
+  --acc:#6b9a1e;--acc2:#c17a10;--acc3:#0e9a78;--acc4:#7c5cd6;--acc5:#c0296a;
+  --txt:#1c2418;--mut:#8a9484;--mut2:#5c6656;
+  --red:#c62828;--redbg:#fdeaea;--greenbg:#eaf7ea;
+}
+body{transition:background-color .2s,color .2s}
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
 body{background:var(--bg);color:var(--txt);font-family:system-ui,-apple-system,sans-serif;font-size:14px;min-height:100vh;overflow-x:hidden}
 
@@ -391,6 +399,12 @@ body.driver-mode .app{padding-bottom:78px}
 </style>
 </head>
 <body>
+<script>
+// Primijeni sačuvanu temu ODMAH, prije nego se bilo šta iscrta (izbjegava treptanje tamno->svijetlo)
+try{
+  if(localStorage.getItem('gorivolog-theme')==='light') document.body.classList.add('light-mode');
+}catch(e){}
+</script>
 
 <!-- ═══ LOGIN EKRAN ═══ -->
 <div id="loginScreen" style="position:fixed;inset:0;background:var(--bg);z-index:500;display:flex;align-items:center;justify-content:center;padding:20px">
@@ -418,6 +432,7 @@ body.driver-mode .app{padding-bottom:78px}
 
   <div class="role-switch" id="user-info" style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--mut2)">
     <span id="ui-name">—</span>
+    <button class="role-btn" onclick="toggleTheme()" id="theme-toggle-btn" title="Promijeni izgled">🌙</button>
     <button class="role-btn" onclick="doLogout()">🚪 Odjava</button>
   </div>
 
@@ -1282,6 +1297,19 @@ function tipL(t){return{kamion:'🚛 Kamion',bager:'🏗️ Bager',demper:'⛏�
 function tipTag(t){return{kamion:'t-k',bager:'t-b',demper:'t-warn',cisterna:'t-f',agregat:'t-g',malo:'t-m'}[t]||'t-k';}
 // Vozila kod kojih se mjeri RADNI SAT (ne kilometraža) - stoje na mjestu ili rade bez registracije za cestu
 function koristiMotoSate(tip){ return tip==='bager'||tip==='demper'||tip==='agregat'; }
+// ═══ SVIJETLI/TAMNI MOD ═══
+function toggleTheme(){
+  const isLight=document.body.classList.toggle('light-mode');
+  try{ localStorage.setItem('gorivolog-theme', isLight?'light':'dark'); }catch(e){}
+  const btn=document.getElementById('theme-toggle-btn'); if(btn) btn.textContent=isLight?'☀️':'🌙';
+  const mt=document.querySelector('meta[name="theme-color"]'); if(mt) mt.content=isLight?'#f4f6f1':'#0a0c0b';
+}
+function initTheme(){
+  const isLight=document.body.classList.contains('light-mode');
+  const btn=document.getElementById('theme-toggle-btn'); if(btn) btn.textContent=isLight?'☀️':'🌙';
+  const mt=document.querySelector('meta[name="theme-color"]'); if(mt) mt.content=isLight?'#f4f6f1':'#0a0c0b';
+}
+initTheme();
 function toast(msg,dur=2500){const el=document.getElementById('toast');el.textContent=msg;el.classList.add('show');setTimeout(()=>el.classList.remove('show'),dur);}
 function openModal(id){document.getElementById(id).classList.add('open');}
 function closeModal(id){document.getElementById(id).classList.remove('open');}
