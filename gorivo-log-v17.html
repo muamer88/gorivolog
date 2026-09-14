@@ -800,13 +800,14 @@ try{
   <!-- EXCEL IMPORT -->
   <div class="card">
     <div class="card-title">
-      <span class="card-title-left">📥 Import vozila iz Excela</span>
+      <span class="card-title-left">📥 Import / 📤 Export vozila (Excel)</span>
       <div class="btn-row">
         <button class="btn btn-xl" onclick="downloadTemplate()">⬇ Preuzmi predložak</button>
+        <button class="btn btn-xl" onclick="exportVozilaExcel()">⬇ Izvezi trenutna vozila</button>
       </div>
     </div>
     <div class="signal sig-tip">
-      Preuzmi predložak, popuni ga u Excelu i uvezi ovdje. Kolone: Registracija | Tip | Model | Firma | Vozač
+      Preuzmi predložak, popuni ga u Excelu i uvezi ovdje. Kolone: Registracija | Tip | Model | Firma | Vozač | Garažni broj | Status | Serijski broj
     </div>
     <div class="drop-zone" id="drop-zone" onclick="document.getElementById('excel-file').click()"
       ondragover="e=>e.preventDefault()" ondrop="handleDrop(event)">
@@ -856,6 +857,26 @@ try{
       <span class="fil-count" id="vfil-count"></span>
     </div>
     <div class="tw" id="tbl-vozila"><div class="empty">Nema vozila</div></div>
+  </div>
+
+  <div class="card" style="border-color:rgba(240,74,74,.3)">
+    <div class="card-title" style="color:var(--red)">⚠️ Obriši sva vozila</div>
+    <div class="signal sig-warn">Briše SAMO bazu vozila (ne dira otpremnice, cisterne, firme, gradilišta). Korisno kad želiš da počneš ispočetka sa čistim uvozom iz STAS/BOSSIL exporta. Stare otpremnice ostaju netaknute i čitljive (registracija/firma su na njima trajno zapamćene).</div>
+    <button class="btn btn-r" onclick="openObrisiVozilaModal()">🗑 Obriši sva vozila</button>
+  </div>
+</div>
+
+<!-- ═══ MODAL: OBRIŠI SVA VOZILA ═══ -->
+<div class="modal" id="obrisiVozilaModal">
+  <div class="modal-box">
+    <div class="modal-head"><h3 style="color:var(--red)">⚠️ Potvrda brisanja vozila</h3><button class="btn btn-r" onclick="closeModal('obrisiVozilaModal')">✕</button></div>
+    <div class="modal-body">
+      <p style="font-size:13px;color:var(--mut2);margin-bottom:12px">Ovo će trajno obrisati SVA vozila iz baze (<span id="ov-broj" style="color:var(--acc);font-weight:700"></span> trenutno). Otpremnice, cisterne, firme i gradilišta ostaju netaknuti.</p>
+      <div class="fg full"><label>Da potvrdiš, upiši riječ <b>OBRISI</b> ispod:</label><input id="ov-confirm-txt" placeholder="OBRISI"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-r" id="ov-confirm-btn" onclick="izvrsiObrisiVozila()">🗑 Da, obriši sva vozila</button>
+    </div>
   </div>
 </div>
 
@@ -3007,6 +3028,45 @@ function exportTrecaExcel(){
 // ═══════════════════════════════════════════════
 // EXCEL IMPORT
 // ═══════════════════════════════════════════════
+// Izvozi TRENUTNA vozila u istom formatu kao predložak - za backup prije brisanja, ili slanje BOSSIL-u za poređenje.
+function exportVozilaExcel(){
+  if(typeof XLSX==='undefined'){toast('⚠ Učitava se XLSX biblioteka, pokušaj za sekundu...',3000);return;}
+  if(!S.vozila.length){toast('⚠ Nema vozila za izvoz.');return;}
+  const rows=[['Registracija','Tip','Model','Firma','Vozač','Garažni broj','Status','Serijski broj']];
+  [...S.vozila].sort((a,b)=>a.reg.localeCompare(b.reg)).forEach(v=>{
+    const f=gF(v.firmaId);
+    rows.push([v.reg, v.tip, v.model||'', f?f.naziv:'', v.vozac||'', v.garazniBr||'', jeAktivan(v)?'':'PRODAN', v.serijskiBr||'']);
+  });
+  const ws=XLSX.utils.aoa_to_sheet(rows);
+  ws['!cols']=[{wch:16},{wch:10},{wch:20},{wch:25},{wch:22},{wch:14},{wch:12},{wch:26}];
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,ws,'Vozila');
+  XLSX.writeFile(wb,`vozila_export_${today()}.xlsx`);
+  toast(`✓ Izvezeno ${S.vozila.length} vozila!`);
+}
+
+// ═══ BRISANJE SVIH VOZILA (samostalno, ne dira ostatak baze) ═══
+function openObrisiVozilaModal(){
+  document.getElementById('ov-broj').textContent=S.vozila.length;
+  document.getElementById('ov-confirm-txt').value='';
+  openModal('obrisiVozilaModal');
+}
+async function izvrsiObrisiVozila(){
+  const txt=document.getElementById('ov-confirm-txt').value.trim().toUpperCase();
+  if(txt!=='OBRISI'){toast('⚠ Upišite tačno "OBRISI" da potvrdite.');return;}
+  const btn=document.getElementById('ov-confirm-btn');
+  if(btn){btn.disabled=true;btn.textContent='Brišem...';}
+  logAkcija('Obrisana sva vozila', `${S.vozila.length} vozila obrisao/la ${currentUser?currentUser.username:'?'} — otpremnice/cisterne/firme netaknuti`);
+  try{
+    await window.FB.wipeCollection('vozila');
+    toast('✓ Sva vozila obrisana. Spreman za novi uvoz.',4000);
+    setTimeout(()=>location.reload(),1000);
+  }catch(e){
+    toast('⚠ Greška: '+e.message,5000);
+    if(btn){btn.disabled=false;btn.textContent='🗑 Da, obriši sva vozila';}
+  }
+}
+
 function downloadTemplate(){
   if(typeof XLSX==='undefined'){toast('⚠ Učitava se XLSX biblioteka, pokušaj za sekundu...',3000);return;}
   const ws=XLSX.utils.aoa_to_sheet([
