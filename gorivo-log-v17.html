@@ -3238,20 +3238,22 @@ function renderVozilaTbl(){
   if(cnt)cnt.textContent=`${list.length} / ${S.vozila.length} vozila`;
   const el=document.getElementById('tbl-vozila');
   if(!list.length){el.innerHTML='<div class="empty">Nema vozila u bazi</div>';return;}
-  el.innerHTML='<table><thead><tr><th>Registracija</th><th>Garažni br.</th><th>Tip</th><th>Model</th><th>Firma</th><th>Vozač</th><th style="text-align:center">Akcije</th></tr></thead><tbody id="veh-tbody">'+
-    list.map(v=>renderVehRow(v)).join('')+'</tbody></table>';
+  el.innerHTML='<div class="tw"><table class="excel-like"><thead><tr><th>Registracija</th><th>Garažni br.</th><th>Serijski br.</th><th>Tip</th><th>Model</th><th>Firma</th><th>Vozač</th><th>Status</th><th style="text-align:center">Akcije</th></tr></thead><tbody id="veh-tbody">'+
+    list.map(v=>renderVehRow(v)).join('')+'</tbody></table></div>';
 }
 
 function renderVehRow(v){
   const f=gF(v.firmaId);
   const neaktivno=!jeAktivan(v);
   return`<tr id="vrow-${v.id}" style="${neaktivno?'opacity:.5':''}">
-    <td style="font-family:monospace;font-weight:700;color:var(--acc)">${v.reg}${neaktivno?' <span class="tag t-warn" style="font-size:9px">NEAKTIVNO</span>':''}${v.serijskiBr?`<div style="font-size:9px;color:var(--mut2);font-weight:400">SN: ${v.serijskiBr}</div>`:''}</td>
+    <td style="font-family:monospace;font-weight:700;color:var(--acc)">${v.reg}</td>
     <td style="font-family:monospace;color:var(--acc4)">${v.garazniBr||'—'}</td>
+    <td style="font-family:monospace;font-size:11px;color:var(--mut2)">${v.serijskiBr||'—'}</td>
     <td><span class="tag ${tipTag(v.tip)}">${tipL(v.tip)}</span></td>
     <td style="font-size:12px;color:var(--mut2)">${v.model||'—'}</td>
     <td><span class="tag t-f" style="font-size:11px">${f?f.naziv:'?'}</span></td>
     <td style="font-size:12px">${v.vozac||'—'}</td>
+    <td>${neaktivno?'<span class="tag t-warn" style="font-size:10px">NEAKTIVNO</span>':'<span class="tag t-ok" style="font-size:10px">Aktivno</span>'}</td>
     <td style="text-align:center;white-space:nowrap">
       <button class="btn btn-qr" style="padding:4px 8px;font-size:11px" onclick="showQR('${v.id}')">QR</button>
       <button class="btn btn-s" style="padding:4px 8px;font-size:11px" onclick="editVehRow('${v.id}')">✏️</button>
@@ -3279,6 +3281,7 @@ function editVehRow(id){
     <td class="td-edit"><input id="ve-mod-${id}" value="${v.model||''}"></td>
     <td class="td-edit"><select id="ve-fir-${id}">${firOpts}</select></td>
     <td class="td-edit"><input id="ve-voz-${id}" value="${v.vozac||''}"></td>
+    <td class="td-edit"><label style="display:flex;align-items:center;gap:4px;font-size:11px;white-space:nowrap"><input type="checkbox" id="ve-aktivan-${id}" ${jeAktivan(v)?'checked':''}> Aktivan</label></td>
     <td style="text-align:center;white-space:nowrap">
       <button class="btn btn-p" style="padding:5px 10px;font-size:12px" onclick="saveVehEdit('${id}')">✓</button>
       <button class="btn btn-s" style="padding:5px 10px;font-size:12px" onclick="cancelVehEdit('${id}')">✕</button>
@@ -3295,7 +3298,8 @@ async function saveVehEdit(id){
     tip:document.getElementById('ve-tip-'+id).value,
     model:document.getElementById('ve-mod-'+id).value.trim(),
     firmaId:document.getElementById('ve-fir-'+id).value,
-    vozac:document.getElementById('ve-voz-'+id).value.trim()
+    vozac:document.getElementById('ve-voz-'+id).value.trim(),
+    aktivan:document.getElementById('ve-aktivan-'+id).checked
   };
   try{
     await window.FB.setDoc(window.FB.docRef('vozila',id),podaci,{merge:true});
