@@ -852,6 +852,7 @@ try{
         <option value="malo">Mala vozila</option>
       </select>
       <select id="vfil-fir" onchange="renderVozilaTbl()"><option value="">Sve firme</option></select>
+      <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--mut2);white-space:nowrap"><input type="checkbox" id="vfil-neaktivna" onchange="renderVozilaTbl()"> Prikaži i neaktivna</label>
       <span class="fil-count" id="vfil-count"></span>
     </div>
     <div class="tw" id="tbl-vozila"><div class="empty">Nema vozila</div></div>
@@ -1520,7 +1521,7 @@ function searchVeh(q){
   const drop=document.getElementById('veh-drop');
   if(!q||q.length<1){drop.classList.remove('open');return;}
   const ql=q.toLowerCase();
-  const res=S.vozila.filter(v=>v.reg.toLowerCase().includes(ql)||(v.vozac||'').toLowerCase().includes(ql)||(v.model||'').toLowerCase().includes(ql)||(v.garazniBr||'').toLowerCase().includes(ql)).slice(0,10);
+  const res=S.vozila.filter(v=>jeAktivan(v)&&(v.reg.toLowerCase().includes(ql)||(v.vozac||'').toLowerCase().includes(ql)||(v.model||'').toLowerCase().includes(ql)||(v.garazniBr||'').toLowerCase().includes(ql))).slice(0,10);
   let html=res.map(v=>{const f=gF(v.firmaId);return`<div class="vdrop-item" onclick="selectVeh('${v.id}')"><div class="vdrop-reg">${v.reg}${v.garazniBr?` <span style="color:var(--acc4)">(${v.garazniBr})</span>`:''} <span class="tag ${tipTag(v.tip)}" style="font-size:10px">${tipL(v.tip)}</span></div><div class="vdrop-sub">${v.model||''} · ${f?f.naziv:'?'} · ${v.vozac||'—'}</div></div>`;}).join('');
   html+=`<div class="vdrop-item" style="border-top:2px solid rgba(255,255,255,.1);color:var(--acc)" onclick="quickAddVeh('${q.replace(/'/g,"\\'")}')">➕ Vozilo nije u bazi — dodaj "${q}"</div>`;
   drop.innerHTML=html;
@@ -1626,7 +1627,7 @@ function renderRecentVeh(){
   [...S.otpremnice].filter(o=>o.cistijernId===curOtp.cistijernId && !o.stornirano).sort((a,b)=>b.datum.localeCompare(a.datum)).forEach(o=>{
     o.stavke.forEach(s=>{
       if(seen.has(s.kamionId))return;
-      const v=gV(s.kamionId);if(!v)return;
+      const v=gV(s.kamionId);if(!v||!jeAktivan(v))return;
       seen.add(s.kamionId);recenti.push(v);
     });
   });
@@ -3007,13 +3008,13 @@ function exportTrecaExcel(){
 function downloadTemplate(){
   if(typeof XLSX==='undefined'){toast('⚠ Učitava se XLSX biblioteka, pokušaj za sekundu...',3000);return;}
   const ws=XLSX.utils.aoa_to_sheet([
-    ['Registracija','Tip','Model','Firma','Vozač','Garažni broj'],
-    ['A01-K-752','kamion','MAN TGS 18t','Gradnja Plus d.o.o.','Mirko Mirković','K47'],
-    ['BAG-001','bager','Caterpillar 320D','Gradnja Plus d.o.o.','Haris Muratović','B12'],
-    ['K09-J-456','kamion','Scania R500','CestaCo d.d.','Senad Sejdić','K09'],
-    ['A22-M-100','malo','VW Transporter','CestaCo d.d.','Adin Lelo',''],
+    ['Registracija','Tip','Model','Firma','Vozač','Garažni broj','Status'],
+    ['A01-K-752','kamion','MAN TGS 18t','Gradnja Plus d.o.o.','Mirko Mirković','K47',''],
+    ['BAG-001','bager','Caterpillar 320D','Gradnja Plus d.o.o.','Haris Muratović','B12',''],
+    ['K09-J-456','kamion','Scania R500','CestaCo d.d.','Senad Sejdić','K09',''],
+    ['A22-M-100','malo','VW Transporter','CestaCo d.d.','Adin Lelo','','PRODAN'],
   ]);
-  ws['!cols']=[{wch:16},{wch:10},{wch:20},{wch:25},{wch:22},{wch:14}];
+  ws['!cols']=[{wch:16},{wch:10},{wch:20},{wch:25},{wch:22},{wch:14},{wch:12}];
   const wb=XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb,ws,'Vozila');
   XLSX.writeFile(wb,'predlozak_vozila.xlsx');
@@ -3041,6 +3042,21 @@ function processExcelFile(file){
   reader.readAsArrayBuffer(file);
 }
 
+// Čisti registraciju: uklanja višak razmaka (i na krajevima i unutra), velika slova.
+// Rješava tačno onu "nečistoću" iz STAS/BOSSIL exporta (dupli razmaci, malo/veliko).
+// Vozilo se smatra aktivnim osim ako je EKSPLICITNO označeno kao neaktivno (kompatibilno sa starim
+// vozilima koja nemaju uopšte ovo polje - ona su aktivna po defaultu).
+function jeAktivan(v){ return v.aktivan!==false; }
+
+function normReg(r){
+  return String(r||'').trim().toUpperCase().replace(/\s+/g,' ');
+}
+// Prepoznaje status vozila iz STAS/BOSSIL exporta (kolona "Oznaka (status)")
+function normStatus(s){
+  const t=String(s||'').toLowerCase();
+  if(t.includes('prodan')||t.includes('odjavljen')||t.includes('neaktiv')||t.includes('otpisan'))return false; // nije aktivan
+  return true; // prazno ili bilo šta drugo = aktivan
+}
 function normTip(t){
   const s=String(t||'').toLowerCase().trim();
   if(s.includes('demper')||s.includes('dumper'))return'demper';
@@ -3052,27 +3068,29 @@ function normTip(t){
 }
 
 function showImportPreview(rows){
-  let html='<table><thead><tr><th>Status</th><th>Registracija</th><th>Garažni br.</th><th>Tip</th><th>Model</th><th>Firma</th><th>Vozač</th><th>Napomena</th></tr></thead><tbody>';
-  let nOk=0,nNew=0,nWarn=0;
+  let html='<table><thead><tr><th>Status</th><th>Registracija</th><th>Garažni br.</th><th>Tip</th><th>Model</th><th>Firma</th><th>Vozač</th><th>Aktivan?</th><th>Napomena</th></tr></thead><tbody>';
+  let nOk=0,nNew=0,nWarn=0,nNeaktivno=0;
   rows.forEach(r=>{
-    const reg=String(r[0]||'').trim().toUpperCase();
+    const reg=normReg(r[0]);
     const tip=normTip(r[1]);
     const model=String(r[2]||'').trim();
     const firmaNaziv=String(r[3]||'').trim();
     const vozac=String(r[4]||'').trim();
-    const garazniBr=String(r[5]||'').trim().toUpperCase();
+    const garazniBr=normReg(r[5]);
+    const aktivan=normStatus(r[6]);
     const exists=S.vozila.find(v=>v.reg===reg);
     const firmaExists=S.firme.find(f=>f.naziv.toLowerCase()===firmaNaziv.toLowerCase());
-    let status,cls,note='';
+    let stat,cls,note='';
     if(!reg){return;}
-    if(exists){status='🔄 Ažurira';cls='import-row-warn';nWarn++;}
-    else{status='✅ Novi';cls='import-row-ok';nOk++;}
+    if(exists){stat='🔄 Ažurira';cls='import-row-warn';nWarn++;}
+    else{stat='✅ Novi';cls='import-row-ok';nOk++;}
     if(firmaNaziv&&!firmaExists){note='Firma "'+firmaNaziv+'" će biti kreirana';nNew++;}
-    html+=`<tr class="${cls}"><td style="font-size:12px">${status}</td><td style="font-family:monospace;font-weight:700;color:var(--acc)">${reg}</td><td style="font-family:monospace;color:var(--acc4)">${garazniBr||'—'}</td><td>${tipL(tip)}</td><td style="font-size:12px">${model||'—'}</td><td>${firmaNaziv||'—'}</td><td style="font-size:12px">${vozac||'—'}</td><td style="font-size:11px;color:var(--acc2)">${note}</td></tr>`;
+    if(!aktivan) nNeaktivno++;
+    html+=`<tr class="${cls}" style="${!aktivan?'opacity:.55':''}"><td style="font-size:12px">${stat}</td><td style="font-family:monospace;font-weight:700;color:var(--acc)">${reg}</td><td style="font-family:monospace;color:var(--acc4)">${garazniBr||'—'}</td><td>${tipL(tip)}</td><td style="font-size:12px">${model||'—'}</td><td>${firmaNaziv||'—'}</td><td style="font-size:12px">${vozac||'—'}</td><td>${aktivan?'✅':'<span class="tag t-warn" style="font-size:10px">NEAKTIVNO</span>'}</td><td style="font-size:11px;color:var(--acc2)">${note}</td></tr>`;
   });
   html+='</tbody></table>';
   document.getElementById('import-tbl').innerHTML=html;
-  document.getElementById('import-stats').innerHTML=`<span class="tag t-ok" style="margin-right:6px">✅ ${nOk} novih</span><span class="tag t-warn" style="margin-right:6px">${nWarn} ažuriranja</span>${nNew?`<span class="tag t-new">${nNew} novih firmi</span>`:''}`;
+  document.getElementById('import-stats').innerHTML=`<span class="tag t-ok" style="margin-right:6px">✅ ${nOk} novih</span><span class="tag t-warn" style="margin-right:6px">${nWarn} ažuriranja</span>${nNew?`<span class="tag t-new" style="margin-right:6px">${nNew} novih firmi</span>`:''}${nNeaktivno?`<span class="tag t-warn">${nNeaktivno} označeno neaktivno (prodano/odjavljeno)</span>`:''}`;
   document.getElementById('import-preview').style.display='block';
 }
 
@@ -3081,7 +3099,7 @@ async function confirmImport(){
   const ops=[];
   const newFirme=[]; // {naziv} - kreiramo prvo firme da im znamo id prije vozila
   importRows.forEach(r=>{
-    const reg=String(r[0]||'').trim().toUpperCase();if(!reg)return;
+    const reg=normReg(r[0]);if(!reg)return;
     const firmaNaziv=String(r[3]||'').trim();
     if(firmaNaziv && !S.firme.find(f=>f.naziv.toLowerCase()===firmaNaziv.toLowerCase()) && !newFirme.find(f=>f.naziv.toLowerCase()===firmaNaziv.toLowerCase())){
       newFirme.push({naziv:firmaNaziv});
@@ -3094,12 +3112,13 @@ async function confirmImport(){
     addedF++;
   });
   importRows.forEach(r=>{
-    const reg=String(r[0]||'').trim().toUpperCase();if(!reg)return;
+    const reg=normReg(r[0]);if(!reg)return;
     const tip=normTip(r[1]);
     const model=String(r[2]||'').trim();
     const firmaNaziv=String(r[3]||'').trim();
     const vozac=String(r[4]||'').trim();
-    const garazniBr=String(r[5]||'').trim().toUpperCase();
+    const garazniBr=normReg(r[5]);
+    const aktivan=normStatus(r[6]);
     let firmaId='';
     if(firmaNaziv){
       const f=S.firme.find(f=>f.naziv.toLowerCase()===firmaNaziv.toLowerCase());
@@ -3107,11 +3126,11 @@ async function confirmImport(){
     }
     const idx=S.vozila.findIndex(v=>v.reg===reg);
     if(idx>=0){
-      ops.push({type:'set',col:'vozila',id:S.vozila[idx].id,data:{tip,model,garazniBr,firmaId,vozac},merge:true});
+      ops.push({type:'set',col:'vozila',id:S.vozila[idx].id,data:{tip,model,garazniBr,firmaId,vozac,aktivan},merge:true});
       updatedV++;
     }else{
       const id=window.FB.newDocId('vozila');
-      ops.push({type:'set',col:'vozila',id,data:{reg,tip,model,garazniBr,firmaId,vozac}});
+      ops.push({type:'set',col:'vozila',id,data:{reg,tip,model,garazniBr,firmaId,vozac,aktivan}});
       addedV++;
     }
   });
@@ -3136,7 +3155,9 @@ function renderVozilaTbl(){
   const q=(document.getElementById('vfil-q')?.value||'').toLowerCase();
   const tipF=document.getElementById('vfil-tip')?.value||'';
   const firF=document.getElementById('vfil-fir')?.value||'';
+  const prikaziNeaktivna=document.getElementById('vfil-neaktivna')?.checked||false;
   let list=S.vozila.filter(v=>{
+    if(!prikaziNeaktivna && !jeAktivan(v))return false;
     if(q&&!v.reg.toLowerCase().includes(q)&&!(v.vozac||'').toLowerCase().includes(q)&&!(v.model||'').toLowerCase().includes(q)&&!(v.garazniBr||'').toLowerCase().includes(q))return false;
     if(tipF&&v.tip!==tipF)return false;
     if(firF&&v.firmaId!==firF)return false;
@@ -3152,8 +3173,9 @@ function renderVozilaTbl(){
 
 function renderVehRow(v){
   const f=gF(v.firmaId);
-  return`<tr id="vrow-${v.id}">
-    <td style="font-family:monospace;font-weight:700;color:var(--acc)">${v.reg}</td>
+  const neaktivno=!jeAktivan(v);
+  return`<tr id="vrow-${v.id}" style="${neaktivno?'opacity:.5':''}">
+    <td style="font-family:monospace;font-weight:700;color:var(--acc)">${v.reg}${neaktivno?' <span class="tag t-warn" style="font-size:9px">NEAKTIVNO</span>':''}</td>
     <td style="font-family:monospace;color:var(--acc4)">${v.garazniBr||'—'}</td>
     <td><span class="tag ${tipTag(v.tip)}">${tipL(v.tip)}</span></td>
     <td style="font-size:12px;color:var(--mut2)">${v.model||'—'}</td>
@@ -3296,7 +3318,7 @@ function printAllQR(){
   setTimeout(()=>{
     const grid=document.getElementById('qr-all-grid');
     if(!grid)return;
-    S.vozila.forEach(v=>{
+    S.vozila.filter(jeAktivan).forEach(v=>{
       const f=gF(v.firmaId);
       const div=document.createElement('div');div.className='qr-item';
       const qrdiv=document.createElement('div');
