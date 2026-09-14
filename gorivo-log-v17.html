@@ -556,10 +556,10 @@ try{
         </div>
         <div class="fg full"><label>Ime i prezime vozača</label><input id="e-voz" placeholder="Ime Prezime"></div>
         <div class="grid2">
-          <div class="fg full" id="mjeriloP-g"><label id="mjerilo-lbl">Kilometraža / Moto sati</label><input type="number" id="e-mjerilo" min="0" step=".1" placeholder="125620" style="font-size:19px;font-weight:700">
+          <div class="fg full" id="mjeriloP-g"><label id="mjerilo-lbl">Kilometraža / Moto sati</label><input type="number" id="e-mjerilo" min="0" step=".1" placeholder="" style="font-size:19px;font-weight:700">
             <div id="e-mjerilo-zadnja" style="font-size:11px;color:var(--mut2);margin-top:3px"></div>
           </div>
-          <div class="fg full"><label>⛽ Litara točeno</label><input type="number" id="e-lit" min="0" step=".5" placeholder="350" style="font-size:26px;font-weight:900;color:var(--acc);text-align:center"></div>
+          <div class="fg full"><label>⛽ Litara točeno</label><input type="number" id="e-lit" min="0" step=".5" placeholder="" style="font-size:26px;font-weight:900;color:var(--acc);text-align:center"></div>
         </div>
         <div class="fg full"><label>Potpis vozača</label>
           <div class="sig-prev" id="e-sig-p" onclick="openSig('entry')" style="height:64px"><span id="e-sig-lbl" style="color:var(--mut2);font-size:12px">👆 Dodirni za potpis</span></div>
@@ -1668,7 +1668,7 @@ function selectVeh(id){
   document.getElementById('e-fir').textContent=f?f.naziv:'?';
   const isB=koristiMotoSate(v.tip);
   document.getElementById('mjerilo-lbl').textContent = isB?'Moto sati':'Kilometraža';
-  document.getElementById('e-mjerilo').placeholder = isB?'4835':'125620';
+  document.getElementById('e-mjerilo').placeholder = '';
   document.getElementById('e-mjerilo').step = isB?'.1':'1';
   const zadnja=zadnjaKilometraza(id,isB);
   const hint = zadnja!=null ? `Zadnje poznato: ${zadnja} ${isB?'mh':'km'}` : 'Nema ranijeg unosa za ovo vozilo';
