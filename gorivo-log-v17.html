@@ -832,7 +832,7 @@ try{
       <span class="card-title-left">📱 QR kodovi za vozila</span>
       <button class="btn btn-qr" onclick="printAllQR()">🖨 Štampaj sve QR kodove</button>
     </div>
-    <div class="signal sig-tip">QR kod sadrži registraciju vozila. Vozač skenira kamerom — vozilo se automatski učita, nema tipkanja.</div>
+    <div class="signal sig-tip">QR kod sadrži garažni broj (ako je unesen) ili registraciju vozila. Vozač skenira kamerom — vozilo se automatski učita, nema tipkanja.</div>
   </div>
 
   <!-- BAZA VOZILA — editabilna -->
@@ -3265,7 +3265,8 @@ function editVehRow(id){
   const f=gF(v.firmaId);
   const firOpts=S.firme.map(f2=>`<option value="${f2.id}" ${f2.id===v.firmaId?'selected':''}>${f2.naziv}</option>`).join('');
   document.getElementById('vrow-'+id).outerHTML=`<tr id="vrow-${id}" style="background:rgba(200,240,74,.04)">
-    <td class="td-edit"><input id="ve-reg-${id}" value="${v.reg}" style="text-transform:uppercase"></td>
+    <td class="td-edit"><input id="ve-reg-${id}" value="${v.reg}" style="text-transform:uppercase;margin-bottom:4px">
+      <input id="ve-serijski-${id}" value="${v.serijskiBr||''}" placeholder="Serijski broj (šasija)" style="text-transform:uppercase;font-size:10px;padding:4px 6px"></td>
     <td class="td-edit"><input id="ve-garazni-${id}" value="${v.garazniBr||''}" style="text-transform:uppercase"></td>
     <td class="td-edit"><select id="ve-tip-${id}">
       <option value="kamion" ${v.tip==='kamion'?'selected':''}>🚛 Kamion</option>
@@ -3289,6 +3290,7 @@ async function saveVehEdit(id){
   const v=gV(id);if(!v)return;
   const podaci={
     reg:document.getElementById('ve-reg-'+id).value.trim().toUpperCase(),
+    serijskiBr:document.getElementById('ve-serijski-'+id).value.trim().toUpperCase(),
     garazniBr:document.getElementById('ve-garazni-'+id).value.trim().toUpperCase(),
     tip:document.getElementById('ve-tip-'+id).value,
     model:document.getElementById('ve-mod-'+id).value.trim(),
