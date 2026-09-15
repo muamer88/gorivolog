@@ -1918,8 +1918,12 @@ function dashTrosakPeriod(period){
       const trosak=izracunajTrosakStavke(s);
       trUkLit+=s.litara; trUkKM+=trosak;
       if(trosak===0) trBezCijene+=s.litara;
-      if(!poGrad[o.gradId]) poGrad[o.gradId]={lit:0,km:0};
-      poGrad[o.gradId].lit+=s.litara; poGrad[o.gradId].km+=trosak;
+      const raspodjela = (s.gradSplit&&s.gradSplit.length) ? s.gradSplit : [{gradId:o.gradId,postotak:100}];
+      raspodjela.forEach(sp=>{
+        const udio=sp.postotak/100;
+        if(!poGrad[sp.gradId]) poGrad[sp.gradId]={lit:0,km:0};
+        poGrad[sp.gradId].lit+=s.litara*udio; poGrad[sp.gradId].km+=trosak*udio;
+      });
     });
   });
   const top3=Object.entries(poGrad).sort((a,b)=>b[1].km-a[1].km).slice(0,3);
@@ -2607,6 +2611,8 @@ function openEditStavke(tip,id){
         <input type="number" step=".5" data-i="${i}" data-f="litara" value="${s.litara}" placeholder="Litara" style="flex:1">
         <input type="number" step=".1" data-i="${i}" data-f="mjerilo" value="${val!=null?val:''}" placeholder="${isB?'Moto sati':'Kilometraža'}" style="flex:1">
       </div>
+      <button type="button" class="btn btn-s" style="margin-top:6px;padding:4px 10px;font-size:11px" onclick="toggleSplitGradiliste(${i})">📍 ${s.gradSplit&&s.gradSplit.length?'Uređeno: podijeljeno na '+s.gradSplit.length+' gradilišta':'Razdijeli po gradilištu (radio na više njih)'}</button>
+      <div id="edit-split-${i}" style="display:none;margin-top:8px;padding:10px;background:rgba(240,160,32,.06);border-radius:6px" data-stavka-i="${i}"></div>
     </div>`;
     }).join('')
     +'<div id="edit-nove-stavke"></div>'
@@ -2647,6 +2653,46 @@ function dodajNovuStavkuUEdit(tip){
       </div>`;
   }
   cont.appendChild(div);
+}
+
+// ═══ RAZDJELA STAVKE PO VIŠE GRADILIŠTA (kad kamion radi na više njih u istom danu) ═══
+function toggleSplitGradiliste(i){
+  const panel=document.getElementById('edit-split-'+i);
+  if(!panel)return;
+  if(panel.style.display==='none'){
+    const t=window._editTarget;
+    const o=(t.tip==='otpremnice3'?S.otpremnice3:S.otpremnice).find(x=>x.id===t.id);
+    const s=o.stavke[i];
+    const postojece = (s.gradSplit&&s.gradSplit.length) ? s.gradSplit : [{gradId:o.gradId,postotak:100}];
+    panel.innerHTML=`<div style="font-size:11px;color:var(--mut2);margin-bottom:6px">Unesi koliko % je ovo vozilo radilo na svakom gradilištu (zbir treba biti 100%):</div>
+      <div class="split-redovi"></div>
+      <button type="button" class="btn btn-s" style="margin-top:6px;padding:4px 8px;font-size:11px" onclick="dodajSplitRed(${i})">➕ Dodaj gradilište</button>`;
+    postojece.forEach(sp=>dodajSplitRed(i,sp.gradId,sp.postotak));
+    panel.style.display='block';
+  }else{
+    panel.style.display='none';
+  }
+}
+function dodajSplitRed(i,gradId,postotak){
+  const cont=document.querySelector(`#edit-split-${i} .split-redovi`);if(!cont)return;
+  const gradOpcije=S.gradilista.map(g=>`<option value="${g.id}" ${g.id===gradId?'selected':''}>${g.naziv}</option>`).join('');
+  const div=document.createElement('div');
+  div.style.cssText='display:flex;gap:6px;margin-bottom:5px;align-items:center';
+  div.innerHTML=`<select data-split-grad style="flex:2"><option value="">— gradilište —</option>${gradOpcije}</select>
+    <input type="number" data-split-pct value="${postotak!=null?postotak:''}" placeholder="%" min="0" max="100" style="flex:1">
+    <button type="button" class="btn btn-r" style="padding:4px 8px;font-size:11px" onclick="this.parentElement.remove()">✕</button>`;
+  cont.appendChild(div);
+}
+// Očitava trenutno stanje panela za stavku i (null ako panel nije otvaran/nema izmjena)
+function ocitajSplitZaStavku(i){
+  const panel=document.getElementById('edit-split-'+i);
+  if(!panel || panel.style.display==='none') return null;
+  const redovi=[...panel.querySelectorAll('.split-redovi > div')];
+  const split=redovi.map(r=>({
+    gradId:r.querySelector('[data-split-grad]').value,
+    postotak:parseFloat(r.querySelector('[data-split-pct]').value)||0
+  })).filter(x=>x.gradId && x.postotak>0);
+  return split.length ? split : [];
 }
 
 async function sacuvajEditStavke(){
@@ -2706,6 +2752,17 @@ async function sacuvajEditStavke(){
           izmjene.push(`stavka ${i+1}: ${isB?'moto sati':'km'} ${staro}→${val}`);
           if(isB) noveStavke[i].motoSati=val; else noveStavke[i].km=val;
         }
+      }
+    });
+    // Podjela po gradilištu (ako je admin otvorio i popunio taj panel za neku stavku)
+    noveStavke.forEach((s,i)=>{
+      const split=ocitajSplitZaStavku(i);
+      if(split===null) return; // panel nije ni otvaran za ovu stavku - ne diraj
+      const staraOpis = s.gradSplit&&s.gradSplit.length ? s.gradSplit.map(x=>`${gG(x.gradId)?.naziv||'?'} ${x.postotak}%`).join(', ') : '(sve na gradilište otpremnice)';
+      const novaOpis = split.length ? split.map(x=>`${gG(x.gradId)?.naziv||'?'} ${x.postotak}%`).join(', ') : '(sve na gradilište otpremnice)';
+      if(staraOpis!==novaOpis){
+        izmjene.push(`stavka ${i+1}: podjela po gradilištu ${staraOpis} → ${novaOpis}`);
+        if(split.length) s.gradSplit=split; else delete s.gradSplit;
       }
     });
   }
@@ -2927,7 +2984,21 @@ function renderIzv(){
   const fa=Object.entries(fm).sort((a,b)=>b[1].lit-a[1].lit);const mxF=fa[0]?.[1]?.lit||1;
   document.getElementById('rep-f').innerHTML=fa.map(([fid,d])=>{const f=gF(fid);return`<div class="rep-item"><div style="display:flex;justify-content:space-between"><span style="font-weight:700">${f?f.naziv:'?'}</span><span class="tag t-l">${d.lit.toLocaleString()} L${d.km>0?` · <span class="admin-only" style="display:inline">${d.km.toFixed(2)} KM</span>`:''}</span></div><div class="rep-bar-wrap"><div class="rep-bar" style="width:${d.lit/mxF*100}%;background:var(--acc3)"></div></div><div style="font-size:11px;color:var(--mut2);margin-top:3px">${d.br} točenja</div></div>`;}).join('')||'<div class="empty">Nema podataka</div>';
   // Po gradilištu (napomena firme/firmi koje su tu radile, ako je poznato)
-  const gm={};all.forEach(o=>o.stavke.forEach(s=>{if(!gm[o.gradId])gm[o.gradId]={lit:0,br:0,km:0,firme:new Set()};const vi=stavkaVehInfo(s);if(vi.firmaId)gm[o.gradId].firme.add(vi.firmaId);gm[o.gradId].lit+=s.litara;gm[o.gradId].br++;gm[o.gradId].km+=izracunajTrosakStavke(s);}));
+  const gm={};
+  all.forEach(o=>o.stavke.forEach(s=>{
+    const vi=stavkaVehInfo(s);
+    const trosakUk=izracunajTrosakStavke(s);
+    const raspodjela = (s.gradSplit&&s.gradSplit.length) ? s.gradSplit : [{gradId:o.gradId,postotak:100}];
+    raspodjela.forEach(sp=>{
+      const udio=sp.postotak/100;
+      if(!gm[sp.gradId])gm[sp.gradId]={lit:0,br:0,km:0,firme:new Set()};
+      if(vi.firmaId)gm[sp.gradId].firme.add(vi.firmaId);
+      gm[sp.gradId].lit+=s.litara*udio;
+      gm[sp.gradId].km+=trosakUk*udio;
+    });
+    if(!gm[o.gradId])gm[o.gradId]={lit:0,br:0,km:0,firme:new Set()};
+    gm[o.gradId].br++; // broj točenja se i dalje broji na gradilište otpremnice (ne dijeli se)
+  }));
   const ga=Object.entries(gm).sort((a,b)=>b[1].lit-a[1].lit);const mxG=ga[0]?.[1]?.lit||1;
   document.getElementById('rep-g').innerHTML=ga.map(([gid,d])=>{const g=gG(gid);const firmeNazivi=[...d.firme].map(fid=>gF(fid)?.naziv).filter(Boolean).join(', ');return`<div class="rep-item"><div style="display:flex;justify-content:space-between"><span style="font-weight:700">${g?g.naziv:'?'}</span><span class="tag t-l">${d.lit.toLocaleString()} L${d.km>0?` · <span class="admin-only" style="display:inline">${d.km.toFixed(2)} KM</span>`:''}</span></div><div class="rep-bar-wrap"><div class="rep-bar" style="width:${d.lit/mxG*100}%;background:var(--acc2)"></div></div><div style="font-size:11px;color:var(--mut2);margin-top:3px">${g?g.lok:''} · ${d.br} točenja${firmeNazivi?' · '+firmeNazivi:''}</div></div>`;}).join('')||'<div class="empty">Nema podataka</div>';
   // Po tipu
