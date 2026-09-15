@@ -2567,17 +2567,23 @@ function openEditStavke(tip,id){
   if(o.stornirano){toast('⚠ Ovo je stornirana otpremnica, ne može se uređivati.');return;}
   window._editTarget={tip,id};
   const body=document.getElementById('edit-stavke-body');
+  let datumHtml=`<div class="fg full" style="margin-bottom:14px;border-bottom:2px solid var(--bord2);padding-bottom:14px">
+    <label>📅 Datum otpremnice</label>
+    <input type="date" id="edit-otp-datum" value="${(o.datum||'').split('T')[0]}">
+  </div>`;
   if(tip==='otpremnice3'){
-    body.innerHTML=o.stavke.map((s,i)=>`<div class="fg full" style="border-bottom:1px solid var(--bord);padding-bottom:10px;margin-bottom:10px">
+    body.innerHTML=datumHtml+o.stavke.map((s,i)=>`<div class="fg full" style="border-bottom:1px solid var(--bord);padding-bottom:10px;margin-bottom:10px">
       <label>Stavka ${i+1}</label>
       <div style="display:flex;gap:8px;margin-bottom:6px">
         <input type="text" data-i="${i}" data-f="reg" value="${s.reg}" placeholder="Registracija" style="flex:1">
         <input type="text" data-i="${i}" data-f="vozac" value="${s.vozac||''}" placeholder="Ime vozača" style="flex:1">
       </div>
       <input type="number" step=".5" data-i="${i}" data-f="litara" value="${s.litara}" placeholder="Litara">
-    </div>`).join('');
+    </div>`).join('')
+    +'<div id="edit-nove-stavke"></div>'
+    +'<button type="button" class="btn btn-s" style="margin-top:6px" onclick="dodajNovuStavkuUEdit(\'otpremnice3\')">➕ Dodaj vozilo (zaboravljeno u sipanju)</button>';
   }else{
-    body.innerHTML=o.stavke.map((s,i)=>{
+    body.innerHTML=datumHtml+o.stavke.map((s,i)=>{
       const vi=stavkaVehInfo(s);
       const vObj=gV(s.kamionId),isB=vObj&&koristiMotoSate(vObj.tip);
       const val=isB?(s.motoSati!=null?s.motoSati:s.motoSatiK):(s.km!=null?s.km:s.kmKraj);
@@ -2593,19 +2599,64 @@ function openEditStavke(tip,id){
         <input type="number" step=".1" data-i="${i}" data-f="mjerilo" value="${val!=null?val:''}" placeholder="${isB?'Moto sati':'Kilometraža'}" style="flex:1">
       </div>
     </div>`;
-    }).join('');
+    }).join('')
+    +'<div id="edit-nove-stavke"></div>'
+    +'<button type="button" class="btn btn-s" style="margin-top:6px" onclick="dodajNovuStavkuUEdit(\'otpremnice\')">➕ Dodaj vozilo (zaboravljeno u sipanju)</button>';
   }
   openModal('editStavkeModal');
 }
+// Dodaje prazan red u "Uredi" modal - za vozilo koje je vozač zaboravio unijeti pri sipanju.
+window._novaStavkaBrojac=0;
+function dodajNovuStavkuUEdit(tip){
+  const cont=document.getElementById('edit-nove-stavke');if(!cont)return;
+  const nid='nova'+(window._novaStavkaBrojac++);
+  const div=document.createElement('div');
+  div.className='fg full';
+  div.dataset.novaId=nid;
+  div.style.cssText='border-bottom:1px solid var(--bord);padding-bottom:10px;margin-bottom:10px;background:rgba(200,240,74,.05);border-radius:6px;padding:10px';
+  if(tip==='otpremnice3'){
+    div.innerHTML=`<label style="color:var(--acc)">➕ Novo vozilo (treća lica)</label>
+      <div style="display:flex;gap:8px;margin:6px 0">
+        <input type="text" data-nova="${nid}" data-f="reg" placeholder="Registracija" style="flex:1">
+        <input type="text" data-nova="${nid}" data-f="vozac" placeholder="Ime vozača" style="flex:1">
+      </div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <input type="number" step=".5" data-nova="${nid}" data-f="litara" placeholder="Litara" style="flex:1">
+        <button type="button" class="btn btn-r" style="padding:6px 10px;font-size:11px" onclick="this.closest('[data-nova-id]').remove()">✕</button>
+      </div>`;
+  }else{
+    const vozilaOpcije=S.vozila.filter(jeAktivan).map(v=>`<option value="${v.id}">${v.reg} — ${v.model||''}</option>`).join('');
+    div.innerHTML=`<label style="color:var(--acc)">➕ Novo vozilo</label>
+      <div style="display:flex;gap:8px;margin:6px 0">
+        <select data-nova="${nid}" data-f="vozilo" style="flex:1"><option value="">— odaberi vozilo —</option>${vozilaOpcije}</select>
+        <input type="text" data-nova="${nid}" data-f="vozacIme" placeholder="Ime vozača" style="flex:1">
+      </div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <input type="number" step=".5" data-nova="${nid}" data-f="litara" placeholder="Litara" style="flex:1">
+        <input type="number" step=".1" data-nova="${nid}" data-f="mjerilo" placeholder="KM / Moto sati" style="flex:1">
+        <button type="button" class="btn btn-r" style="padding:6px 10px;font-size:11px" onclick="this.closest('[data-nova-id]').remove()">✕</button>
+      </div>`;
+  }
+  cont.appendChild(div);
+}
+
 async function sacuvajEditStavke(){
   const t=window._editTarget;if(!t)return;
   const arr=t.tip==='otpremnice3'?S.otpremnice3:S.otpremnice;
   const o=arr.find(x=>x.id===t.id);if(!o)return;
   const izmjene=[];
   const noveStavke=o.stavke.map(s=>({...s}));
+  const patch={};
+
+  // Datum otpremnice
+  const noviDatum=document.getElementById('edit-otp-datum')?.value;
+  if(noviDatum && noviDatum!==(o.datum||'').split('T')[0]){
+    izmjene.push(`datum ${o.datum}→${noviDatum}`);
+    patch.datum=noviDatum;
+  }
 
   if(t.tip==='otpremnice3'){
-    document.querySelectorAll('#edit-stavke-body input').forEach(inp=>{
+    document.querySelectorAll('#edit-stavke-body input[data-i]').forEach(inp=>{
       const i=+inp.dataset.i, f=inp.dataset.f;
       if(f==='litara'){
         const val=parseFloat(inp.value);
@@ -2620,7 +2671,7 @@ async function sacuvajEditStavke(){
     });
   }else{
     // Prvo obradi promjenu vozila (ako ima) da se litara/mjerilo ispravno primijene na novo vozilo
-    document.querySelectorAll('#edit-stavke-body select[data-f="vozilo"]').forEach(sel=>{
+    document.querySelectorAll('#edit-stavke-body select[data-f="vozilo"][data-i]').forEach(sel=>{
       const i=+sel.dataset.i, novoId=sel.value;
       if(novoId && novoId!==noveStavke[i].kamionId){
         const novoV=gV(novoId), staroV=gV(noveStavke[i].kamionId);
@@ -2629,7 +2680,7 @@ async function sacuvajEditStavke(){
         noveStavke[i].regSnap=novoV.reg; noveStavke[i].modelSnap=novoV.model||''; noveStavke[i].firmaIdSnap=novoV.firmaId||'';
       }
     });
-    document.querySelectorAll('#edit-stavke-body input').forEach(inp=>{
+    document.querySelectorAll('#edit-stavke-body input[data-i]').forEach(inp=>{
       const i=+inp.dataset.i, f=inp.dataset.f;
       if(f==='litara'){
         const val=parseFloat(inp.value);
@@ -2649,10 +2700,40 @@ async function sacuvajEditStavke(){
       }
     });
   }
+
+  // Nove stavke (zaboravljena vozila) - dodane preko "➕ Dodaj vozilo"
+  const noveGrupe=document.querySelectorAll('#edit-nove-stavke [data-nova-id]');
+  for(const div of noveGrupe){
+    const nid=div.dataset.novaId;
+    const get=f=>div.querySelector(`[data-nova="${nid}"][data-f="${f}"]`)?.value?.trim()||'';
+    const litara=parseFloat(get('litara'));
+    if(!litara||litara<=0) continue; // prazan/nepopunjen red - preskoči tiho
+    if(t.tip==='otpremnice3'){
+      const reg=get('reg').toUpperCase(), vozac=get('vozac');
+      if(!reg){toast('⚠ Novo vozilo mora imati registraciju.');return;}
+      noveStavke.push({id:'s'+uid(), reg, vozac, litara, sig:null, vrijeme:new Date().toTimeString().slice(0,5), izvorUlaza:fifoAlociraj(o.cistijernId,litara)});
+      izmjene.push(`dodano novo vozilo: ${reg} (${litara}L)`);
+    }else{
+      const vehId=get('vozilo'), vozacIme=get('vozacIme'), mjerilo=parseFloat(get('mjerilo'));
+      if(!vehId){toast('⚠ Odaberi vozilo za novi red.');return;}
+      const v=gV(vehId);if(!v)continue;
+      const isB=koristiMotoSate(v.tip);
+      noveStavke.push({
+        id:'s'+uid(), kamionId:vehId, vozacIme,
+        km:isB?null:(isNaN(mjerilo)?null:mjerilo), motoSati:isB?(isNaN(mjerilo)?null:mjerilo):null,
+        litara, sig:null, vrijeme:new Date().toTimeString().slice(0,5),
+        izvorUlaza:fifoAlociraj(o.cistijernId,litara),
+        regSnap:v.reg, modelSnap:v.model||'', firmaIdSnap:v.firmaId||''
+      });
+      izmjene.push(`dodano novo vozilo: ${v.reg} (${litara}L)`);
+    }
+  }
+
   if(!izmjene.length){toast('Nema izmjena.');closeModal('editStavkeModal');return;}
+  patch.stavke=noveStavke;
   try{
-    await window.FB.setDoc(window.FB.docRef(t.tip,t.id),{stavke:noveStavke},{merge:true});
-    o.stavke=noveStavke;
+    await window.FB.setDoc(window.FB.docRef(t.tip,t.id),patch,{merge:true});
+    Object.assign(o,patch);
     logAkcija('Uređena otpremnica'+(t.tip==='otpremnice3'?' (treća lica)':''), `${o.brojOtp}: ${izmjene.join('; ')}`);
     closeModal('editStavkeModal');
     renderPregled();renderDanas();renderTlLista();populateAll();
