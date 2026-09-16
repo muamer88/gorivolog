@@ -3258,7 +3258,9 @@ function processExcelFile(file){
       const rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:''});
       if(rows.length<2){toast('⚠ Excel nema podataka!');return;}
       // Skip header row
-      const dataRows=rows.slice(1).filter(r=>r[0]&&String(r[0]).trim());
+      // Skip header row - prihvati red ako ima BILO ŠTA od: registracija, garažni broj, ili serijski broj
+      // (mašine bez registarske tablice se identifikuju preko garažnog/serijskog broja)
+      const dataRows=rows.slice(1).filter(r=>(r[0]&&String(r[0]).trim())||(r[5]&&String(r[5]).trim())||(r[7]&&String(r[7]).trim()));
       importRows=dataRows;
       showImportPreview(dataRows);
     }catch(err){toast('⚠ Greška pri čitanju fajla: '+err.message);}
