@@ -773,6 +773,11 @@ try{
     <div class="signal sig-tip">Prosjek L/100km računa se iz razlike prve i zadnje kilometraže u periodu. Litre zadnjeg (najnovijeg) sipanja NE ulaze u obračun prosjeka — to gorivo je tek sipano i još nije potrošeno na vožnju, ali se i dalje broji u ukupnoj koloni "Litara". Bagerima/mašinama se prikazuje L/moto-sat.</div>
     <div class="tw"><table><thead><tr><th>Vozilo</th><th>Firma</th><th>Litara</th><th class="admin-only">Trošak (KM)</th><th>Pređeno</th><th>Prosjek</th></tr></thead><tbody id="rep-potrosnja"></tbody></table></div>
   </div>
+  <div class="card admin-only">
+    <div class="card-title">🚫 Vozila BEZ sipanja u periodu</div>
+    <div class="signal sig-tip">Aktivna vozila iz baze koja NISU dobila gorivo u odabranom periodu (i filterima) — korisno za provjeru da li je nešto propušteno pri unosu, ili da provjeriš gdje su ta vozila/zašto nisu radila.</div>
+    <div id="rep-bez-sipanja"></div>
+  </div>
   <div class="card">
     <div class="card-title">🏢 Treća lica — izvještaj</div>
     <div class="grid2">
@@ -3038,6 +3043,34 @@ function renderPotrosnjaPoVozilu(all){
     }
     return `<tr><td><b>${r.v.reg}</b><br><span style="font-size:11px;color:var(--mut2)">${r.v.model||''}</span></td><td style="font-size:12px">${f?f.naziv:'?'}</td><td><span class="tag t-l">${r.ukLit.toLocaleString()} L</span></td><td class="admin-only"><b>${r.ukKM.toFixed(2)} KM</b></td><td>${predjeno!=null?predjeno.toLocaleString()+(r.isB?' mh':' km'):'—'}</td><td><b>${prosjek}</b></td></tr>`;
   }).join('') || '<tr><td colspan="6" style="text-align:center;color:var(--mut2)">Nema podataka za odabrani period</td></tr>';
+
+  // ═══ Vozila BEZ sipanja u periodu (poštuje iste filtere: firma/vozilo; period+gradilište su već primijenjeni u "all") ═══
+  const elBez=document.getElementById('rep-bez-sipanja');
+  if(elBez){
+    const firmaFil=document.getElementById('izv-fil-firma')?.value||'';
+    const vozFil=document.getElementById('izv-fil-vozilo')?.value||'';
+    const kandidati=S.vozila.filter(v=>{
+      if(!jeAktivan(v))return false;
+      if(vozFil && v.id!==vozFil)return false;
+      if(firmaFil && v.firmaId!==firmaFil)return false;
+      return true;
+    });
+    const bezSipanja=kandidati.filter(v=>!pv[v.id]).sort((a,b)=>a.reg.localeCompare(b.reg));
+    if(!kandidati.length){
+      elBez.innerHTML='<div class="empty">Nema aktivnih vozila u bazi (ili filter ne poklapa ništa).</div>';
+    }else if(!bezSipanja.length){
+      elBez.innerHTML='<div class="empty">✓ Sva aktivna vozila (u ovom filteru) su dobila gorivo u periodu.</div>';
+    }else{
+      elBez.innerHTML=`<div style="margin-bottom:8px;font-size:12px;color:var(--acc2)">${bezSipanja.length} od ${kandidati.length} vozila bez sipanja u ovom periodu/filteru:</div>`+
+      bezSipanja.map(v=>{
+        const f=gF(v.firmaId);
+        return `<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--bord);font-size:13px">
+          <span><b>${v.reg}</b> ${v.model?'— '+v.model:''}</span>
+          <span style="color:var(--mut2)">${f?f.naziv:'?'} · ${tipL(v.tip)}</span>
+        </div>`;
+      }).join('');
+    }
+  }
 }
 
 // ═══ TREĆA LICA IZVJEŠTAJ ═══
