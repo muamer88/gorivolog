@@ -563,6 +563,10 @@ try{
         </div>
         <div class="fg full"><label>Potpis vozača</label>
           <div class="sig-prev" id="e-sig-p" onclick="openSig('entry')" style="height:64px"><span id="e-sig-lbl" style="color:var(--mut2);font-size:12px">👆 Dodirni za potpis</span></div>
+          <label class="admin-only" style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--acc2);margin-top:6px">
+            <input type="checkbox" id="e-papirni-unos" onchange="document.getElementById('e-sig-p').style.opacity=this.checked?'.4':'1'">
+            📄 Ovo je istorijski unos sa papira (imam potpisan papir, preskoči digitalni potpis)
+          </label>
         </div>
         <div class="btn-row">
           <button class="btn btn-p btn-lg" onclick="addStavka()" style="flex:2">✓ Dodaj na listu</button>
@@ -1731,7 +1735,8 @@ async function addStavka(){
     const ok=confirm(`⚠ Unesena vrijednost (${val}) je MANJA od zadnje poznate (${zadnja} ${isB?'mh':'km'}) za ovo vozilo!\n\nOvo je neuobičajeno — moguće je da je vozilo puknjeno negdje van sistema, zamijenjeno brojilo, ili je greška u unosu.\n\nNastaviti ipak?`);
     if(!ok) return;
   }
-  if(!sigs.entry){toast('⚠ Potpis vozača je obavezan — dodirni polje za potpis prije dodavanja na listu!',4000);return;}
+  const papirniUnos = currentUser&&currentUser.role==='admin' && document.getElementById('e-papirni-unos')?.checked;
+  if(!sigs.entry && !papirniUnos){toast('⚠ Potpis vozača je obavezan — dodirni polje za potpis prije dodavanja na listu!',4000);return;}
   curOtp.stavke.push({
     id:'s'+uid(), kamionId:curVehId,
     vozacIme:document.getElementById('e-voz').value.trim(),
@@ -1741,8 +1746,10 @@ async function addStavka(){
     vrijeme:new Date().toTimeString().slice(0,5),
     izvorUlaza:fifoAlociraj(curOtp.cistijernId,lit),
     // "Zamrznuti" podaci o vozilu u trenutku sipanja - buduće izmjene/uvoz vozila NE mijenjaju stare otpremnice
-    regSnap:v.reg, modelSnap:v.model||'', firmaIdSnap:v.firmaId||''
+    regSnap:v.reg, modelSnap:v.model||'', firmaIdSnap:v.firmaId||'',
+    papirniUnos: papirniUnos||false
   });
+  if(papirniUnos) logAkcija('Papirni unos (bez digitalnog potpisa)', `${v.reg} — ${lit}L, ${document.getElementById('e-voz').value.trim()}`);
   await ponudiAzuriranjeVozaca(curVehId, document.getElementById('e-voz').value);
   renderStavke();
   renderRecentVeh();
@@ -2173,7 +2180,7 @@ function printTreca(id,obj){
       <td style="font-family:monospace;font-size:10px">${s.vrijeme||'—'}</td>
       <td style="font-size:9px;color:#666">${s.napomena||''}</td>
       <td style="font-family:monospace;font-weight:700;text-align:right">${s.litara}</td>
-      <td style="text-align:center">${s.sig?`<img src="${s.sig}" style="height:38px;width:auto;background:#fff">`:'<span style="font-size:9px;color:#ccc">—</span>'}</td>
+      <td style="text-align:center">${s.sig?`<img src="${s.sig}" style="height:38px;width:auto;background:#fff">`:(s.papirniUnos?'<span style="font-size:9px;color:#666">📄 na papiru</span>':'<span style="font-size:9px;color:#ccc">—</span>')}</td>
     </tr>`).join('');
   document.getElementById('print-title').textContent=`Otpremnica (treća lica) ${o.brojOtp}`;
   document.getElementById('print-body').innerHTML=`<div class="otp">
@@ -3646,7 +3653,7 @@ function printOtp(id,obj){
       <td style="font-family:monospace">${mj}</td>
       <td style="font-family:monospace;font-size:10px">${s.vrijeme||'—'}</td>
       <td style="font-family:monospace;font-weight:700;text-align:right">${s.litara}</td>
-      <td style="text-align:center">${s.sig?`<img src="${s.sig}" style="height:38px;width:auto;background:#fff">`:'<span style="font-size:9px;color:#ccc">—</span>'}</td>
+      <td style="text-align:center">${s.sig?`<img src="${s.sig}" style="height:38px;width:auto;background:#fff">`:(s.papirniUnos?'<span style="font-size:9px;color:#666">📄 na papiru</span>':'<span style="font-size:9px;color:#ccc">—</span>')}</td>
     </tr>`;
   }).join('');
   document.getElementById('print-title').textContent=`Otpremnica ${o.brojOtp}`;
