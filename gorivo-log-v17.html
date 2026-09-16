@@ -1633,9 +1633,9 @@ function onScanSuccess(decodedText){
 // Vraća {reg, model, firmaId} za stavku - koristi "zamrznute" podatke iz trenutka sipanja ako postoje
 // (novi zapisi), inače pada nazad na trenutno stanje vozila (stari zapisi prije ove izmjene).
 function stavkaVehInfo(s){
-  if(s.regSnap){ return {reg:s.regSnap, model:s.modelSnap||'', firmaId:s.firmaIdSnap||''}; }
+  if(s.regSnap){ return {reg:s.regSnap, model:s.modelSnap||'', firmaId:s.firmaIdSnap||'', tip:s.tipSnap||'kamion'}; }
   const v=gV(s.kamionId);
-  return v ? {reg:v.reg, model:v.model||'', firmaId:v.firmaId||''} : {reg:'?', model:'', firmaId:''};
+  return v ? {reg:v.reg, model:v.model||'', firmaId:v.firmaId||'', tip:v.tip||'kamion'} : {reg:'?', model:'', firmaId:'', tip:'kamion'};
 }
 
 function formatMjerilo(s, isB){
@@ -1746,7 +1746,7 @@ async function addStavka(){
     vrijeme:new Date().toTimeString().slice(0,5),
     izvorUlaza:fifoAlociraj(curOtp.cistijernId,lit),
     // "Zamrznuti" podaci o vozilu u trenutku sipanja - buduće izmjene/uvoz vozila NE mijenjaju stare otpremnice
-    regSnap:v.reg, modelSnap:v.model||'', firmaIdSnap:v.firmaId||'',
+    regSnap:v.reg, modelSnap:v.model||'', firmaIdSnap:v.firmaId||'', tipSnap:v.tip||'kamion',
     papirniUnos: papirniUnos||false
   });
   if(papirniUnos) logAkcija('Papirni unos (bez digitalnog potpisa)', `${v.reg} — ${lit}L, ${document.getElementById('e-voz').value.trim()}`);
@@ -1859,7 +1859,7 @@ async function generisiTestnuOtpremnicu(){
       sig:generisiTestniPotpis(i+1),
       vrijeme,
       izvorUlaza:fifoAlociraj(cisterna.id,litraPoStavci),
-      regSnap:v.reg, modelSnap:v.model||'', firmaIdSnap:v.firmaId||''
+      regSnap:v.reg, modelSnap:v.model||'', firmaIdSnap:v.firmaId||'', tipSnap:v.tip||'kamion'
     });
   });
 
@@ -2801,7 +2801,7 @@ async function sacuvajEditStavke(){
         km:isB?null:(isNaN(mjerilo)?null:mjerilo), motoSati:isB?(isNaN(mjerilo)?null:mjerilo):null,
         litara, sig:null, vrijeme:new Date().toTimeString().slice(0,5),
         izvorUlaza:fifoAlociraj(o.cistijernId,litara),
-        regSnap:v.reg, modelSnap:v.model||'', firmaIdSnap:v.firmaId||''
+        regSnap:v.reg, modelSnap:v.model||'', firmaIdSnap:v.firmaId||'', tipSnap:v.tip||'kamion'
       });
       izmjene.push(`dodano novo vozilo: ${v.reg} (${litara}L)`);
     }
@@ -3014,9 +3014,13 @@ function renderIzv(){
   const ga=Object.entries(gm).sort((a,b)=>b[1].lit-a[1].lit);const mxG=ga[0]?.[1]?.lit||1;
   document.getElementById('rep-g').innerHTML=ga.map(([gid,d])=>{const g=gG(gid);const firmeNazivi=[...d.firme].map(fid=>gF(fid)?.naziv).filter(Boolean).join(', ');return`<div class="rep-item"><div style="display:flex;justify-content:space-between"><span style="font-weight:700">${g?g.naziv:'?'}</span><span class="tag t-l">${d.lit.toLocaleString()} L${d.km>0?` · <span class="admin-only" style="display:inline">${d.km.toFixed(2)} KM</span>`:''}</span></div><div class="rep-bar-wrap"><div class="rep-bar" style="width:${d.lit/mxG*100}%;background:var(--acc2)"></div></div><div style="font-size:11px;color:var(--mut2);margin-top:3px">${g?g.lok:''} · ${d.br} točenja${firmeNazivi?' · '+firmeNazivi:''}</div></div>`;}).join('')||'<div class="empty">Nema podataka</div>';
   // Po tipu
-  const tm={kamion:{lit:0,br:0,vz:new Set()},bager:{lit:0,br:0,vz:new Set()},malo:{lit:0,br:0,vz:new Set()}};
-  all.forEach(o=>o.stavke.forEach(s=>{const v=gV(s.kamionId);if(!v)return;const t=v.tip;if(!tm[t])tm[t]={lit:0,br:0,vz:new Set()};tm[t].lit+=s.litara;tm[t].br++;tm[t].vz.add(v.id);}));
-  document.getElementById('rep-t').innerHTML=Object.entries(tm).map(([t,d])=>`<tr><td>${tipL(t)}</td><td>${d.vz.size}</td><td>${d.br}</td><td><span class="tag t-l">${d.lit.toLocaleString()} L</span></td></tr>`).join('');
+  const tm={};
+  all.forEach(o=>o.stavke.forEach(s=>{
+    const t=stavkaVehInfo(s).tip;
+    if(!tm[t])tm[t]={lit:0,br:0,vz:new Set()};
+    tm[t].lit+=s.litara;tm[t].br++;tm[t].vz.add(s.kamionId);
+  }));
+  document.getElementById('rep-t').innerHTML=Object.entries(tm).sort((a,b)=>b[1].lit-a[1].lit).map(([t,d])=>`<tr><td>${tipL(t)}</td><td>${d.vz.size}</td><td>${d.br}</td><td><span class="tag t-l">${d.lit.toLocaleString()} L</span></td></tr>`).join('')||'<tr><td colspan="4" style="text-align:center;color:var(--mut2)">Nema podataka</td></tr>';
 
   renderPotrosnjaPoVozilu(all);
   renderTrecaIzvjestaj(all3);
@@ -3025,19 +3029,19 @@ function renderIzv(){
 
 // ═══ POTROŠNJA PO VOZILU (L/100km ili L/moto-sat) ═══
 function renderPotrosnjaPoVozilu(all){
-  const pv={}; // vehId -> {ukLit (sve, za prikaz), ukKM, unosi:[{val,lit}], isB, v}
+  const pv={}; // kamionId -> {ukLit, ukKM, unosi:[{val,lit}], isB, vi:{reg,model,firmaId,tip}}
   all.forEach(o=>o.stavke.forEach(s=>{
-    const v=gV(s.kamionId);if(!v)return;
-    const isB=koristiMotoSate(v);
+    const vi=stavkaVehInfo(s);
+    const isB=koristiMotoSate({tip:vi.tip});
     const val=isB?(s.motoSati!=null?s.motoSati:s.motoSatiK):(s.km!=null?s.km:s.kmKraj);
-    if(!pv[v.id]) pv[v.id]={ukLit:0,ukKM:0,unosi:[],isB,v};
-    pv[v.id].ukLit+=s.litara;
-    pv[v.id].ukKM+=izracunajTrosakStavke(s);
-    if(val!=null) pv[v.id].unosi.push({val,lit:s.litara});
+    if(!pv[s.kamionId]) pv[s.kamionId]={ukLit:0,ukKM:0,unosi:[],isB,vi};
+    pv[s.kamionId].ukLit+=s.litara;
+    pv[s.kamionId].ukKM+=izracunajTrosakStavke(s);
+    if(val!=null) pv[s.kamionId].unosi.push({val,lit:s.litara});
   }));
   const rows=Object.values(pv).sort((a,b)=>b.ukLit-a.ukLit);
   document.getElementById('rep-potrosnja').innerHTML=rows.map(r=>{
-    const f=gF(r.v.firmaId);
+    const f=gF(r.vi.firmaId);
     let predjeno=null, prosjek='—';
     if(r.unosi.length>=2){
       r.unosi.sort((a,b)=>a.val-b.val);
@@ -3048,7 +3052,7 @@ function renderPotrosnjaPoVozilu(all){
         prosjek = r.isB ? `${(litZaProsjek/predjeno).toFixed(2)} L/mh` : `${(litZaProsjek/predjeno*100).toFixed(1)} L/100km`;
       }
     }
-    return `<tr><td><b>${r.v.reg}</b><br><span style="font-size:11px;color:var(--mut2)">${r.v.model||''}</span></td><td style="font-size:12px">${f?f.naziv:'?'}</td><td><span class="tag t-l">${r.ukLit.toLocaleString()} L</span></td><td class="admin-only"><b>${r.ukKM.toFixed(2)} KM</b></td><td>${predjeno!=null?predjeno.toLocaleString()+(r.isB?' mh':' km'):'—'}</td><td><b>${prosjek}</b></td></tr>`;
+    return `<tr><td><b>${r.vi.reg}</b><br><span style="font-size:11px;color:var(--mut2)">${r.vi.model||''}</span></td><td style="font-size:12px">${f?f.naziv:'?'}</td><td><span class="tag t-l">${r.ukLit.toLocaleString()} L</span></td><td class="admin-only"><b>${r.ukKM.toFixed(2)} KM</b></td><td>${predjeno!=null?predjeno.toLocaleString()+(r.isB?' mh':' km'):'—'}</td><td><b>${prosjek}</b></td></tr>`;
   }).join('') || '<tr><td colspan="6" style="text-align:center;color:var(--mut2)">Nema podataka za odabrani period</td></tr>';
 
   // ═══ Vozila BEZ sipanja u periodu (poštuje iste filtere: firma/vozilo; period+gradilište su već primijenjeni u "all") ═══
