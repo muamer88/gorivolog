@@ -1111,7 +1111,7 @@ try{
         <div class="fg"><label>Model</label><input id="nv-mod" placeholder="MAN TGS 18t"></div>
         <div class="fg"><label>Garažni broj (opciono)</label><input id="nv-garazni" placeholder="npr. K47" oninput="this.value=this.value.toUpperCase()"></div>
         <div class="fg"><label>Serijski broj / broj šasije (opciono)</label><input id="nv-serijski" placeholder="za mašine bez registracije" oninput="this.value=this.value.toUpperCase()"></div>
-        <div class="fg"><label>Firma *</label><select id="nv-fir"><option value="">— odaberi —</option></select></div>
+        <div class="fg"><label>Firma (može i naknadno)</label><select id="nv-fir"><option value="">— odaberi —</option></select></div>
         <div class="fg full"><label>Ime i prezime vozača</label><input id="nv-voz" placeholder="Ime Prezime"></div>
         <div class="fg full"><label>Napomena (opciono)</label><input id="nv-nap" placeholder="npr. novo vozilo, nije bilo u bazi"></div>
       </div>
@@ -3560,7 +3560,7 @@ async function saveNewVehicle(){
   const serijskiBr=document.getElementById('nv-serijski').value.trim().toUpperCase();
   const fir=document.getElementById('nv-fir').value;
   if(!reg && (garazniBr||serijskiBr)) reg=garazniBr||serijskiBr; // mašine bez registracije - koristi garažni/serijski kao identifikator za prikaz
-  if(!reg||!fir){toast('⚠ Registracija (ili bar garažni/serijski broj za mašine bez table) i firma su obavezni!');return;}
+  if(!reg){toast('⚠ Registracija (ili bar garažni/serijski broj za mašine bez table) je obavezna!');return;}
   if(S.vozila.find(v=>v.reg===reg)){toast('⚠ Ta registracija već postoji!');return;}
   const napomena=document.getElementById('nv-nap')?document.getElementById('nv-nap').value.trim():'';
   try{
