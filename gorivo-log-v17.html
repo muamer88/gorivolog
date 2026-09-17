@@ -766,6 +766,7 @@ try{
     <div class="btn-row">
       <button class="btn btn-xl" onclick="exportIzvjestajExcel()">⬇ Excel — sirovi podaci</button>
       <button class="btn btn-xl" onclick="exportPivotExcel()">⬇ Excel — pivot po vozilu</button>
+      <button class="btn btn-xl admin-only" onclick="bulkPrintOtpremnice()">🖨 Štampaj sve otpremnice (filtrirano)</button>
     </div>
   </div>
   <div class="stats" id="stats-g"></div>
@@ -3724,14 +3725,8 @@ function printAllQR(){
 // ═══════════════════════════════════════════════
 // PRINT OTPREMNICA
 // ═══════════════════════════════════════════════
-function printOtp(id,obj){
-  const o=obj||S.otpremnice.find(x=>x.id===id);if(!o)return;
-  window._printSource={tip:'otpremnice',obj:o};
-  document.getElementById('print-receipt-btn').style.display='inline-block';
-  document.getElementById('print-receipt-btn').textContent='🧾 Uska traka';
-  document.getElementById('print-receipt-btn').onclick=prebaciNaUskiFormat;
-  document.getElementById('print-poreklo-btn').style.display='inline-block';
-  const rsTag=document.getElementById('receiptPageStyle');if(rsTag)rsTag.textContent='';
+// Vraća HTML blok za JEDNU otpremnicu - koristi ga i printOtp() (pojedinačno) i bulkPrintOtpremnice() (skupno)
+function otpToHtml(o){
   const c=gC(o.cistijernId),g=gG(o.gradId),mf=S.mojaFirma;
   const ukL=o.stavke.reduce((a,s)=>a+s.litara,0);
   const rows=o.stavke.map((s,i)=>{
@@ -3749,8 +3744,8 @@ function printOtp(id,obj){
       <td style="text-align:center">${s.sig?`<img src="${s.sig}" style="height:38px;width:auto;background:#fff">`:(s.papirniUnos?'<span style="font-size:9px;color:#666">📄 na papiru</span>':'<span style="font-size:9px;color:#ccc">—</span>')}</td>
     </tr>`;
   }).join('');
-  document.getElementById('print-title').textContent=`Otpremnica ${o.brojOtp}`;
-  document.getElementById('print-body').innerHTML=`<div class="otp">
+  const firme=[...new Set(o.stavke.map(s=>{const f=gF(stavkaVehInfo(s).firmaId);return f?f.naziv:null;}).filter(Boolean))];
+  return`<div class="otp">
     <div class="otp-top">
       <div class="otp-co"><img src="logo.png" style="height:34px;width:auto;display:block;margin-bottom:5px" onerror="this.style.display='none'"><strong>${mf.naziv||'[Vaša firma]'}</strong>${mf.adresa||''}<br>${mf.idBroj?'ID: '+mf.idBroj:''} ${mf.tel?'| Tel: '+mf.tel:''}<br>${mf.email||''}</div>
       <div><div class="otp-ttl">OTPREMNICA</div><div style="font-family:monospace;font-size:12px;text-align:right">Br: <b>${o.brojOtp}</b></div><div style="font-size:10px;color:#666;text-align:right">${o.datum}</div></div>
@@ -3758,7 +3753,7 @@ function printOtp(id,obj){
     <div class="otp-meta">
       <div class="otp-mb"><div class="otp-ml">Cisterna</div><div class="otp-mv">${c?c.reg:'—'}</div><div class="otp-ms">Vozač: ${c?c.vozac:'—'}</div></div>
       <div class="otp-mb"><div class="otp-ml">Gradilište</div><div class="otp-mv">${g?g.naziv:'—'}</div><div class="otp-ms">${g?g.lok||'':''}</div></div>
-      <div class="otp-mb"><div class="otp-ml">Firma</div><div class="otp-mv">${(()=>{const firme=[...new Set(o.stavke.map(s=>{const f=gF(stavkaVehInfo(s).firmaId);return f?f.naziv:null;}).filter(Boolean))];return firme.length?firme.join(' / '):'—';})()}</div></div>
+      <div class="otp-mb"><div class="otp-ml">Firma</div><div class="otp-mv">${firme.length?firme.join(' / '):'—'}</div></div>
       <div class="otp-mb"><div class="otp-ml">Gorivo</div><div class="otp-mv">${o.gorivo}</div></div>
       <div class="otp-mb"><div class="otp-ml">Datum</div><div class="otp-mv">${o.datum}</div><div class="otp-ms">${o.stavke.length} vozila</div></div>
     </div>
@@ -3773,6 +3768,44 @@ function printOtp(id,obj){
     </div>
     <div class="otp-foot"><span>${mf.naziv||''} | ${mf.adresa||''}</span><span>${o.brojOtp} | ${o.datum} | GorivoLog v4</span></div>
   </div>`;
+}
+function printOtp(id,obj){
+  const o=obj||S.otpremnice.find(x=>x.id===id);if(!o)return;
+  window._printSource={tip:'otpremnice',obj:o};
+  document.getElementById('print-receipt-btn').style.display='inline-block';
+  document.getElementById('print-receipt-btn').textContent='🧾 Uska traka';
+  document.getElementById('print-receipt-btn').onclick=prebaciNaUskiFormat;
+  document.getElementById('print-poreklo-btn').style.display='inline-block';
+  const rsTag=document.getElementById('receiptPageStyle');if(rsTag)rsTag.textContent='';
+  document.getElementById('print-title').textContent=`Otpremnica ${o.brojOtp}`;
+  document.getElementById('print-body').innerHTML=otpToHtml(o);
+  openModal('printModal');
+}
+
+// ═══ SKUPNO ŠTAMPANJE (za računovodstvo) - sve filtrirane otpremnice u jedan dokument, spremno za PDF ═══
+function bulkPrintOtpremnice(){
+  const od=document.getElementById('izv-od').value, do_=document.getElementById('izv-do').value;
+  const gradFil=document.getElementById('izv-fil-grad')?.value||'';
+  const firmaFil=document.getElementById('izv-fil-firma')?.value||'';
+  let list=S.otpremnice.filter(o=>{
+    if(o.stornirano) return false;
+    const d=(o.datum||'').split('T')[0];
+    if(od && d<od) return false;
+    if(do_ && d>do_) return false;
+    if(gradFil && o.gradId!==gradFil) return false;
+    if(firmaFil && !o.stavke.some(s=>stavkaVehInfo(s).firmaId===firmaFil)) return false;
+    return true;
+  });
+  if(!list.length){toast('⚠ Nema otpremnica za odabrane filtere.');return;}
+  list.sort((a,b)=>(a.datum||'').localeCompare(b.datum||'')||vrijemeKreiranjaOtp(a.brojOtp).localeCompare(vrijemeKreiranjaOtp(b.brojOtp)));
+  const ukupnoL=list.reduce((a,o)=>a+o.stavke.reduce((b,s)=>b+s.litara,0),0);
+  document.getElementById('print-receipt-btn').style.display='none';
+  document.getElementById('print-poreklo-btn').style.display='none';
+  document.getElementById('print-export-btn').style.display='none';
+  document.getElementById('print-title').textContent=`${list.length} otpremnica — ukupno ${ukupnoL.toLocaleString()} L`;
+  document.getElementById('print-body').innerHTML=
+    `<div style="padding:10px 20px;color:#000;font-size:12px">📋 Skupni ispis: <b>${list.length}</b> otpremnica, ukupno <b>${ukupnoL.toLocaleString()} L</b>${od||do_?` (period: ${od||'početak'} — ${do_||'danas'})`:''}</div>`+
+    list.map(o=>otpToHtml(o)+'<div style="page-break-after:always"></div>').join('');
   openModal('printModal');
 }
 
