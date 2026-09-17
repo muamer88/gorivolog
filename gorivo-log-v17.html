@@ -1234,6 +1234,32 @@ function gV(id){return S.vozila.find(v=>v.id===id);}
 // ═══════════════════════════════════════════════
 
 // Koliko je već potrošeno iz svake ulazne serije (po ulazId), gledajući SVE zapise koji imaju izvorUlaza
+// Kao potrosenoPoSerijama(), ALI prati transfere kroz lanac do KRAJNJE potrošnje (stvarno sipanje vozilu),
+// umjesto da tretira sam transfer kao "potrošeno". Ako transfer nije u potpunosti rastočen na odredištu,
+// taj ostatak se i dalje računa kao "preostalo" na originalnoj fakturi. KORISTITI SAMO ZA PRIKAZ "Preostalo"
+// korisniku (ULAZI lista, Porijeklo goriva) - NE za FIFO alokaciju, koja mora znati šta je fizički napustilo
+// konkretnu cisternu (za to služi potrosenoPoSerijama()).
+function potrosenoPoSerijamaKrajnje(){
+  const mapa={};
+  const dodajKrozLanac=(ulazId, litara, depth)=>{
+    depth=depth||0; if(depth>8||!ulazId) return;
+    if(String(ulazId).startsWith('transfer:')){
+      const tid=ulazId.split(':')[1];
+      const t=S.transferi.find(y=>y.id===tid);
+      if(!t||!t.izvorUlaza||!t.izvorUlaza.length) return;
+      const totalT=t.izvorUlaza.reduce((a,x)=>a+x.litara,0)||1;
+      t.izvorUlaza.forEach(src=>dodajKrozLanac(src.ulazId,(src.litara/totalT)*litara,depth+1));
+      return;
+    }
+    mapa[ulazId]=(mapa[ulazId]||0)+litara;
+  };
+  const dodaj=arr=>{(arr||[]).forEach(rec=>{(rec.izvorUlaza||[]).forEach(x=>{ if(x.ulazId) dodajKrozLanac(x.ulazId,x.litara); });});};
+  S.otpremnice.filter(o=>!o.stornirano).forEach(o=>dodaj(o.stavke));
+  S.otpremnice3.filter(o=>!o.stornirano).forEach(o=>dodaj(o.stavke));
+  if(curOtp) dodaj(curOtp.stavke);
+  if(curOtp3) dodaj(curOtp3.stavke);
+  return mapa;
+}
 function potrosenoPoSerijama(){
   const mapa={};
   const dodaj=arr=>{(arr||[]).forEach(rec=>{(rec.izvorUlaza||[]).forEach(x=>{ if(x.ulazId) mapa[x.ulazId]=(mapa[x.ulazId]||0)+x.litara; });});};
@@ -2452,7 +2478,7 @@ async function deleteUl(id){
 function renderUl(){
   const el=document.getElementById('lst-ul');
   if(!S.ulazi.length){el.innerHTML='<div class="empty">Nema unosa</div>';return;}
-  const potroseno=potrosenoPoSerijama();
+  const potroseno=potrosenoPoSerijamaKrajnje();
   el.innerHTML='<div class="tw"><table><thead><tr><th>Datum</th><th>Cisterna</th><th>Dobavljač</th><th>Litara</th><th class="admin-only">Faktura</th><th>Preostalo</th><th></th></tr></thead><tbody>'+
     [...S.ulazi].reverse().map(u=>{
       const c=gC(u.cistijernId);const isKor=u.dobav==='KOREKCIJA';
@@ -2501,7 +2527,7 @@ function prikaziPotrosnjuSerije(ulazId){
   const c=gC(u.cistijernId);
   const potrosnja=tragZaSerijom(u.id, '');
   potrosnja.sort((a,b)=>(a.datum||'').localeCompare(b.datum||''));
-  const potroseno=potrosenoPoSerijama();
+  const potroseno=potrosenoPoSerijamaKrajnje();
   const preostalo=u.litara-(potroseno[u.id]||0);
   window._porekloExport={naslov:`Serija ${u.dobav||'?'} - ${(u.datum||'').split('T')[0]}`, potrosnja};
   document.getElementById('print-title').textContent=`Serija: ${u.dobav||'?'} — ${(u.datum||'').split('T')[0]}`;
