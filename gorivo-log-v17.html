@@ -1923,7 +1923,7 @@ async function zatvoriOtp(){
       const ref=await window.FB.addDoc(window.FB.col('otpremnice'),podaci);
       saved.push({id:ref.id,...podaci});
     }
-    saved.forEach(s=>S.otpremnice.push(s));
+    saved.forEach(s=>{ if(!S.otpremnice.find(x=>x.id===s.id)) S.otpremnice.push(s); });
     resetOtpForm();
     renderDanas();
     if(fidKeys.length>1){
@@ -2160,7 +2160,7 @@ async function zatvoriTreca(){
     const {id, ...podaci}=curOtp3;
     const ref=await window.FB.addDoc(window.FB.col('otpremnice3'),podaci);
     const saved={id:ref.id,...podaci};
-    S.otpremnice3.push(saved);
+    if(!S.otpremnice3.find(x=>x.id===saved.id)) S.otpremnice3.push(saved);
     resetTreca3Form();
     renderTlLista();
     printTreca(saved.id,saved);
@@ -2392,7 +2392,7 @@ async function spremiTr(){
   const podaci={datum:document.getElementById('tr-dat').value||nowDT(),cistijernDajeId:daje,cistijernPrimaId:prima,gorivo:document.getElementById('tr-gor').value,litara:lit,lokacija:document.getElementById('tr-lok').value.trim(),sig1:sigs.tr1,sig2:sigs.tr2,izvorUlaza:fifoAlociraj(daje,lit)};
   try{
     const ref=await window.FB.addDoc(window.FB.col('transferi'),podaci);
-    S.transferi.push({id:ref.id,...podaci});
+    if(!S.transferi.find(x=>x.id===ref.id)) S.transferi.push({id:ref.id,...podaci});
     sigs.tr1=sigs.tr2=null;
     document.getElementById('tr-lit').value='';document.getElementById('tr-lok').value='';
     ['tr-s1-p','tr-s2-p'].forEach(id=>{document.getElementById(id).innerHTML='<span style="color:var(--mut2);font-size:12px">👆 Potpis</span>';});
@@ -2435,7 +2435,7 @@ async function spremiUl(){
       toast('✓ Ulaz ažuriran!');
     }else{
       const ref=await window.FB.addDoc(window.FB.col('ulazi'),podaci);
-      S.ulazi.push({id:ref.id,...podaci});
+      if(!S.ulazi.find(x=>x.id===ref.id)) S.ulazi.push({id:ref.id,...podaci});
       toast('✓ Ulaz sačuvan!');
     }
     document.getElementById('ul-lit').value='';document.getElementById('ul-dob').value='';document.getElementById('ul-brdob').value='';document.getElementById('ul-nap').value='';document.getElementById('ul-fakt').value='';document.getElementById('ul-cij').value='';
@@ -2591,7 +2591,7 @@ async function saveKorekcija(){
   try{
     const podaci={datum:nowDT(),cistijernId:cid,dobav:'KOREKCIJA',brDob:'',gorivo:'',litara:raz,nap:razlog};
     const ref=await window.FB.addDoc(window.FB.col('ulazi'),podaci);
-    S.ulazi.push({id:ref.id,...podaci});
+    if(!S.ulazi.find(x=>x.id===ref.id)) S.ulazi.push({id:ref.id,...podaci});
     renderUl();populateAll();closeModal('korekcijaModal');
     logAkcija('Korekcija stanja cisterne', `${gC(cid)?.reg||cid}: ${raz>0?'+':''}${raz}L — ${razlog}`);
     toast('✓ Korekcija sačuvana');
@@ -3705,7 +3705,7 @@ async function saveNewVehicle(){
   try{
     const podaci={reg,tip:document.getElementById('nv-tip').value,model:document.getElementById('nv-mod').value.trim(),garazniBr,serijskiBr,firmaId:fir,vozac:document.getElementById('nv-voz').value.trim(),napomena};
     const ref=await window.FB.addDoc(window.FB.col('vozila'),podaci);
-    S.vozila.push({id:ref.id,...podaci}); // optimistički, dok ne stigne potvrda sa servera
+    if(!S.vozila.find(x=>x.id===ref.id)) S.vozila.push({id:ref.id,...podaci}); // optimistički, dok ne stigne potvrda sa servera
     closeModal('addVehModal');renderVozilaTbl();toast('✓ Vozilo dodano!');
     if(window._quickAddForEntry){
       window._quickAddForEntry=false;
