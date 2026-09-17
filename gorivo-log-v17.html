@@ -382,6 +382,9 @@ body.driver-mode .app{padding-bottom:78px}
   .ptbar{display:none!important}
   .qr-grid{page-break-inside:auto}
   .qr-item{page-break-inside:avoid}
+  /* Tabele sa horizontalnim scroll-om (za uske ekrane) NE smiju se odsjeći na papiru - stane sve, samo se smanji */
+  #print-body table{min-width:0!important;width:100%!important;table-layout:auto}
+  #print-body div[style*="overflow-x"]{overflow:visible!important}
 }
 @media(max-width:600px){
   .stats{grid-template-columns:1fr 1fr}
