@@ -3029,7 +3029,13 @@ function filtrirajPeriod(lista, poljeDatuma){
 function stavkaProladiFilter(s){
   const firmaFil=document.getElementById('izv-fil-firma')?.value||'';
   const vozFil=document.getElementById('izv-fil-vozilo')?.value||'';
-  if(vozFil && s.kamionId!==vozFil) return false;
+  if(vozFil && s.kamionId!==vozFil){
+    // ID se ne poklapa direktno (moguće nakon re-uvoza baze vozila sa novim ID-jevima) -
+    // probaj po registraciji kao pouzdanijem, stabilnom identitetu vozila.
+    const vSel=gV(vozFil);
+    const vi=stavkaVehInfo(s);
+    if(!vSel || !vi.reg || vi.reg!==vSel.reg) return false;
+  }
   if(firmaFil){ const vi=stavkaVehInfo(s); if(vi.firmaId!==firmaFil) return false; }
   return true;
 }
@@ -3177,13 +3183,15 @@ function renderPotrosnjaPoVozilu(all){
   if(elBez){
     const firmaFil=document.getElementById('izv-fil-firma')?.value||'';
     const vozFil=document.getElementById('izv-fil-vozilo')?.value||'';
+    // Registracije koje IMAJU sipanje u ovom periodu - po registraciji, ne po ID-ju (pouzdanije nakon re-uvoza baze vozila)
+    const regoviSaSipanjem=new Set(Object.values(pv).map(r=>r.vi.reg).filter(Boolean));
     const kandidati=S.vozila.filter(v=>{
       if(!jeAktivan(v))return false;
       if(vozFil && v.id!==vozFil)return false;
       if(firmaFil && v.firmaId!==firmaFil)return false;
       return true;
     });
-    const bezSipanja=kandidati.filter(v=>!pv[v.id]).sort((a,b)=>a.reg.localeCompare(b.reg));
+    const bezSipanja=kandidati.filter(v=>!pv[v.id] && !regoviSaSipanjem.has(v.reg)).sort((a,b)=>a.reg.localeCompare(b.reg));
     if(!kandidati.length){
       elBez.innerHTML='<div class="empty">Nema aktivnih vozila u bazi (ili filter ne poklapa ništa).</div>';
     }else if(!bezSipanja.length){
