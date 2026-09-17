@@ -2569,14 +2569,23 @@ async function saveKorekcija(){
 }
 
 // ═══ PREGLED ═══
+// Izvlači tačno vrijeme KREIRANJA zapisa iz broja otpremnice (ugrađeno u format OTP-god-MMDD-HHMMSS-xx).
+// Pouzdanije za sortiranje "kako je uneseno" od vremena sipanja na stavci (koje kod papirnih/istorijskih
+// unosa ispadne trenutni sat na zidu u trenutku kucanja, ne stvaran redoslijed sipanja).
+function vrijemeKreiranjaOtp(brojOtp){
+  const m=String(brojOtp||'').match(/-(\d{4})-(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2})-/);
+  if(!m) return '';
+  const [,god,mj,dan,h,min,sek]=m;
+  return `${god}-${mj}-${dan}T${h}:${min}:${sek}`;
+}
 function renderPregled(){
   let list=[...S.otpremnice];
   const sortSmjer=document.getElementById('fil-sort')?.value||'stariji';
-  // Sortiraj po datumu, pa po vremenu prve stavke (za redoslijed unutar istog dana)
+  // Sortiraj po DATUMU sipanja, pa po vremenu KREIRANJA zapisa (redoslijed unosa) unutar istog dana
   list.sort((a,b)=>{
-    const va=(a.datum||'')+'T'+((a.stavke[0]&&a.stavke[0].vrijeme)||'00:00');
-    const vb=(b.datum||'')+'T'+((b.stavke[0]&&b.stavke[0].vrijeme)||'00:00');
-    return sortSmjer==='stariji' ? va.localeCompare(vb) : vb.localeCompare(va);
+    if(a.datum!==b.datum) return sortSmjer==='stariji' ? (a.datum||'').localeCompare(b.datum||'') : (b.datum||'').localeCompare(a.datum||'');
+    const ka=vrijemeKreiranjaOtp(a.brojOtp), kb=vrijemeKreiranjaOtp(b.brojOtp);
+    return sortSmjer==='stariji' ? ka.localeCompare(kb) : kb.localeCompare(ka);
   });
   const od=document.getElementById('fil-od').value,do_=document.getElementById('fil-do').value;
   const cist=document.getElementById('fil-cist').value,grad=document.getElementById('fil-grad').value;
