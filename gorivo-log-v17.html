@@ -712,6 +712,10 @@ try{
     <input type="text" id="fil-broj" placeholder="Broj otpremnice ili fakture..." oninput="renderPregled()" style="min-width:180px">
     <select id="fil-cist"><option value="">Sve cistijerne</option></select>
     <select id="fil-grad"><option value="">Sva gradilišta</option></select>
+    <select id="fil-sort" onchange="renderPregled()">
+      <option value="stariji">Najstarije prvo</option>
+      <option value="noviji">Najnovije prvo</option>
+    </select>
     <button class="btn btn-s" onclick="renderPregled()">🔍</button>
     <button class="btn btn-s" onclick="resetFil()">✕</button>
   </div>
@@ -2566,7 +2570,14 @@ async function saveKorekcija(){
 
 // ═══ PREGLED ═══
 function renderPregled(){
-  let list=[...S.otpremnice].reverse();
+  let list=[...S.otpremnice];
+  const sortSmjer=document.getElementById('fil-sort')?.value||'stariji';
+  // Sortiraj po datumu, pa po vremenu prve stavke (za redoslijed unutar istog dana)
+  list.sort((a,b)=>{
+    const va=(a.datum||'')+'T'+((a.stavke[0]&&a.stavke[0].vrijeme)||'00:00');
+    const vb=(b.datum||'')+'T'+((b.stavke[0]&&b.stavke[0].vrijeme)||'00:00');
+    return sortSmjer==='stariji' ? va.localeCompare(vb) : vb.localeCompare(va);
+  });
   const od=document.getElementById('fil-od').value,do_=document.getElementById('fil-do').value;
   const cist=document.getElementById('fil-cist').value,grad=document.getElementById('fil-grad').value;
   const brojQ=(document.getElementById('fil-broj')?.value||'').trim().toLowerCase();
@@ -2595,7 +2606,7 @@ function renderPregled(){
       </td></tr>`;
     }).join('')+'</tbody></table>';
 }
-function resetFil(){['fil-od','fil-do','fil-broj'].forEach(id=>document.getElementById(id).value='');['fil-cist','fil-grad'].forEach(id=>document.getElementById(id).selectedIndex=0);renderPregled();}
+function resetFil(){['fil-od','fil-do','fil-broj'].forEach(id=>document.getElementById(id).value='');['fil-cist','fil-grad'].forEach(id=>document.getElementById(id).selectedIndex=0);document.getElementById('fil-sort').value='stariji';renderPregled();}
 
 // ═══ STORNO OTPREMNICE (glavna ili treća lica) ═══
 function openStornoModal(tip,id){
