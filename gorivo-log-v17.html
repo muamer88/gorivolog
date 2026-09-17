@@ -2502,10 +2502,12 @@ function prikaziPotrosnjuSerije(ulazId){
   document.getElementById('print-body').innerHTML=`<div style="padding:20px;color:#000;font-size:12px">
     <p><b>Cisterna:</b> ${c?c.reg:'?'} &nbsp; <b>Ukupno u seriji:</b> ${u.litara} L &nbsp; <b>Preostalo:</b> ${preostalo.toFixed(1)} L</p>
     <p><b>Broj fakture:</b> ${u.brFakture||'—'} &nbsp; <b>Cijena:</b> ${u.cijenaLitra?u.cijenaLitra+' KM/L':'—'} &nbsp; <b>Br. otpremnice dobavljača:</b> ${u.brDob||'—'}</p>
-    <table style="width:100%;border-collapse:collapse;margin-top:10px;font-size:11px" border="1" cellpadding="3">
-      <thead><tr style="background:#eee"><th>Datum</th><th>Vrsta</th><th>Vozač</th><th>Vozilo</th><th>Gradilište</th><th>Firma</th><th>Litara</th><th>Put</th></tr></thead>
-      <tbody>${potrosnja.length?potrosnja.map(p=>`<tr><td>${(p.datum||'').replace('T',' ')}</td><td>${p.vrsta}</td><td>${p.ko||'—'}</td><td>${p.vozilo||'—'}</td><td>${p.gradiliste||'—'}</td><td>${p.firma||'—'}</td><td>${p.litara}L</td><td style="font-size:10px;color:#666">${p.poreklo||'—'}</td></tr>`).join(''):'<tr><td colspan="8" style="text-align:center;color:#999">Još ništa nije potrošeno iz ove serije</td></tr>'}</tbody>
+    <div style="overflow-x:auto">
+    <table style="width:100%;min-width:680px;border-collapse:collapse;margin-top:10px;font-size:10px" border="1" cellpadding="4">
+      <thead><tr style="background:#eee"><th style="white-space:nowrap">Datum</th><th style="white-space:nowrap">Vrsta</th><th>Vozač</th><th style="white-space:nowrap">Vozilo</th><th>Gradilište</th><th>Firma</th><th style="white-space:nowrap">Litara</th><th>Put</th></tr></thead>
+      <tbody>${potrosnja.length?potrosnja.map(p=>`<tr><td style="white-space:nowrap">${(p.datum||'').replace('T',' ')}</td><td style="white-space:nowrap">${p.vrsta}</td><td style="white-space:nowrap">${p.ko||'—'}</td><td style="white-space:nowrap">${p.vozilo||'—'}</td><td style="white-space:nowrap">${p.gradiliste||'—'}</td><td style="white-space:nowrap">${p.firma||'—'}</td><td style="white-space:nowrap">${p.litara}L</td><td style="font-size:9px;color:#666">${p.poreklo||'—'}</td></tr>`).join(''):'<tr><td colspan="8" style="text-align:center;color:#999">Još ništa nije potrošeno iz ove serije</td></tr>'}</tbody>
     </table>
+    </div>
   </div>`;
   document.getElementById('print-receipt-btn').style.display='none';
   document.getElementById('print-poreklo-btn').style.display='none';
