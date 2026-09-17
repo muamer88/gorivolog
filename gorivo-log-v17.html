@@ -709,6 +709,7 @@ try{
 <div class="tab" id="tab-pregled">
   <div class="fil">
     <input type="date" id="fil-od"><input type="date" id="fil-do">
+    <input type="text" id="fil-broj" placeholder="Broj otpremnice ili fakture..." oninput="renderPregled()" style="min-width:180px">
     <select id="fil-cist"><option value="">Sve cistijerne</option></select>
     <select id="fil-grad"><option value="">Sva gradilišta</option></select>
     <button class="btn btn-s" onclick="renderPregled()">🔍</button>
@@ -2568,8 +2569,17 @@ function renderPregled(){
   let list=[...S.otpremnice].reverse();
   const od=document.getElementById('fil-od').value,do_=document.getElementById('fil-do').value;
   const cist=document.getElementById('fil-cist').value,grad=document.getElementById('fil-grad').value;
+  const brojQ=(document.getElementById('fil-broj')?.value||'').trim().toLowerCase();
   if(od)list=list.filter(o=>o.datum>=od);if(do_)list=list.filter(o=>o.datum<=do_);
   if(cist)list=list.filter(o=>o.cistijernId===cist);if(grad)list=list.filter(o=>o.gradId===grad);
+  if(brojQ){
+    // Pretraga po broju otpremnice, ILI po broju fakture (nađi fakture koje odgovaraju, pa otpremnice koje su direktno iz njih točile)
+    const matchingUlazIds=new Set(S.ulazi.filter(u=>(u.brFakture||'').toLowerCase().includes(brojQ)).map(u=>u.id));
+    list=list.filter(o=>
+      (o.brojOtp||'').toLowerCase().includes(brojQ) ||
+      o.stavke.some(s=>(s.izvorUlaza||[]).some(x=>matchingUlazIds.has(x.ulazId)))
+    );
+  }
   const el=document.getElementById('tbl-pregled');
   if(!list.length){el.innerHTML='<div class="empty">Nema rezultata</div>';return;}
   el.innerHTML='<table><thead><tr><th>Broj</th><th>Datum</th><th>Cisterna</th><th>Gradilište</th><th>Gorivo</th><th>Voz.</th><th>Ukupno L</th><th class="admin-only"></th></tr></thead><tbody>'+
@@ -2582,7 +2592,7 @@ function renderPregled(){
       </td></tr>`;
     }).join('')+'</tbody></table>';
 }
-function resetFil(){['fil-od','fil-do'].forEach(id=>document.getElementById(id).value='');['fil-cist','fil-grad'].forEach(id=>document.getElementById(id).selectedIndex=0);renderPregled();}
+function resetFil(){['fil-od','fil-do','fil-broj'].forEach(id=>document.getElementById(id).value='');['fil-cist','fil-grad'].forEach(id=>document.getElementById(id).selectedIndex=0);renderPregled();}
 
 // ═══ STORNO OTPREMNICE (glavna ili treća lica) ═══
 function openStornoModal(tip,id){
