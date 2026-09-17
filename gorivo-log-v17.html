@@ -4133,13 +4133,41 @@ function renderGorivoLista(){
   </div>`).join('') || '<div style="color:var(--mut2);font-size:12px;padding:8px">Nema unesenih vrsta.</div>';
 }
 
+const EDIT_POLJA={
+  c:[['reg','Registracija'],['vozac','Vozač'],['kapacitet','Kapacitet (L)']],
+  f:[['naziv','Naziv'],['adr','Adresa']],
+  g:[['naziv','Naziv'],['lok','Lokacija']],
+  tl:[['naziv','Naziv']]
+};
 async function obrisi(tp,id){
   const m={c:'cistijerne',f:'firme',g:'gradilista',tl:'treceLiceFirme'};
   const nazivi={c:'cisternu',f:'firmu',g:'gradilište',tl:'treće lice'};
   if(!confirm(`Obrisati ${nazivi[tp]}? Ova radnja se ne može poništiti.`))return;
   try{await window.FB.deleteDoc(window.FB.docRef(m[tp],id));}catch(e){toast('⚠ Greška: '+e.message);}
 }
-function listItem(el,name,sub,id,tp){return`<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--bord)"><div><b>${name}</b>${sub?`<br><span style="font-size:11px;color:var(--mut2)">${sub}</span>`:''}</div><button class="btn btn-r" onclick="obrisi('${tp}','${id}')">✕</button></div>`;}
+function urediItem(tp,id){
+  const m={c:'cistijerne',f:'firme',g:'gradilista',tl:'treceLiceFirme'};
+  const item=S[m[tp]].find(x=>x.id===id);if(!item)return;
+  const row=document.getElementById('li-'+tp+'-'+id);if(!row)return;
+  row.innerHTML=`<div style="width:100%;padding:6px 0">
+    ${EDIT_POLJA[tp].map(([k,lbl])=>`<div class="fg" style="margin-bottom:6px"><label style="font-size:10px">${lbl}</label><input id="ei-${tp}-${id}-${k}" value="${item[k]||''}" style="width:100%"></div>`).join('')}
+    <div style="display:flex;gap:6px;margin-top:4px">
+      <button class="btn btn-p" style="padding:5px 12px;font-size:12px" onclick="sacuvajItem('${tp}','${id}')">✓ Sačuvaj</button>
+      <button class="btn btn-s" style="padding:5px 12px;font-size:12px" onclick="renderLists()">✕ Otkaži</button>
+    </div>
+  </div>`;
+}
+async function sacuvajItem(tp,id){
+  const m={c:'cistijerne',f:'firme',g:'gradilista',tl:'treceLiceFirme'};
+  const podaci={};
+  EDIT_POLJA[tp].forEach(([k])=>{ podaci[k]=document.getElementById(`ei-${tp}-${id}-${k}`).value.trim(); });
+  if(tp==='c') podaci.kapacitet=parseFloat(podaci.kapacitet)||0;
+  try{
+    await window.FB.setDoc(window.FB.docRef(m[tp],id),podaci,{merge:true});
+    toast('✓ Sačuvano!');
+  }catch(e){toast('⚠ Greška: '+e.message);}
+}
+function listItem(el,name,sub,id,tp){return`<div class="li-row" id="li-${tp}-${id}" style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--bord)"><div><b>${name}</b>${sub?`<br><span style="font-size:11px;color:var(--mut2)">${sub}</span>`:''}</div><div style="white-space:nowrap"><button class="btn btn-s" style="padding:4px 8px;font-size:11px;margin-right:4px" onclick="urediItem('${tp}','${id}')">✏️</button><button class="btn btn-r" onclick="obrisi('${tp}','${id}')">✕</button></div></div>`;}
 function renderLists(){
   document.getElementById('lst-c').innerHTML=S.cistijerne.map(c=>listItem(null,`<span style="font-family:monospace;color:var(--acc3)">${c.reg}</span>`,(c.vozac||'')+(c.kapacitet?' · kap. '+c.kapacitet+'L':''),c.id,'c')).join('')||'<div style="color:var(--mut2);font-size:12px;padding:8px">Nema cistijerni</div>';
   document.getElementById('lst-f').innerHTML=S.firme.map(f=>listItem(null,f.naziv,f.adr,f.id,'f')).join('')||'<div style="color:var(--mut2);font-size:12px;padding:8px">Nema firmi</div>';
