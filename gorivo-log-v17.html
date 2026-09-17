@@ -2463,7 +2463,17 @@ function tragZaSerijom(searchKey, poreklo){
       (rec.stavke||[rec]).forEach(s=>{
         (s.izvorUlaza||[]).forEach(x=>{
           if(x.ulazId===searchKey){
-            rezultat.push({datum:rec.datum,vrsta,litara:x.litara,ko:s.vozacIme||s.reg||(rec.cistijernPrimaId?'transfer u '+(gC(rec.cistijernPrimaId)?.reg||'?'):''),poreklo});
+            let vozilo='—', gradiliste='—', firma='—';
+            if(vrsta==='Otpremnica'){
+              const vi=stavkaVehInfo(s);
+              vozilo=vi.reg;
+              const g=gG(rec.gradId); gradiliste=g?g.naziv:'—';
+              const f=gF(vi.firmaId); firma=f?f.naziv:'—';
+            }else if(vrsta==='Treća lica'){
+              vozilo=s.reg||'—';
+              const f=S.treceLiceFirme.find(x=>x.id===rec.treceLiceId); firma=f?f.naziv:'—';
+            }
+            rezultat.push({datum:rec.datum,vrsta,litara:x.litara,ko:s.vozacIme||s.vozac||(rec.cistijernPrimaId?'transfer u '+(gC(rec.cistijernPrimaId)?.reg||'?'):''),vozilo,gradiliste,firma,poreklo});
             if(vrsta==='Transfer'){
               rezultat=rezultat.concat(tragZaSerijom('transfer:'+rec.id, (poreklo?poreklo+' → ':'')+'preko transfera '+(rec.datum||'').split('T')[0]));
             }
@@ -2490,8 +2500,8 @@ function prikaziPotrosnjuSerije(ulazId){
     <p><b>Cisterna:</b> ${c?c.reg:'?'} &nbsp; <b>Ukupno u seriji:</b> ${u.litara} L &nbsp; <b>Preostalo:</b> ${preostalo.toFixed(1)} L</p>
     <p><b>Broj fakture:</b> ${u.brFakture||'—'} &nbsp; <b>Cijena:</b> ${u.cijenaLitra?u.cijenaLitra+' KM/L':'—'} &nbsp; <b>Br. otpremnice dobavljača:</b> ${u.brDob||'—'}</p>
     <table style="width:100%;border-collapse:collapse;margin-top:10px" border="1" cellpadding="6">
-      <thead><tr style="background:#eee"><th>Datum</th><th>Vrsta</th><th>Kome/gdje</th><th>Litara</th><th>Put (ako je preko transfera)</th></tr></thead>
-      <tbody>${potrosnja.length?potrosnja.map(p=>`<tr><td>${(p.datum||'').replace('T',' ')}</td><td>${p.vrsta}</td><td>${p.ko||'—'}</td><td>${p.litara}L</td><td style="font-size:11px;color:#666">${p.poreklo||'— direktno —'}</td></tr>`).join(''):'<tr><td colspan="5" style="text-align:center;color:#999">Još ništa nije potrošeno iz ove serije</td></tr>'}</tbody>
+      <thead><tr style="background:#eee"><th>Datum</th><th>Vrsta</th><th>Vozač</th><th>Vozilo</th><th>Gradilište</th><th>Firma</th><th>Litara</th><th>Put (ako je preko transfera)</th></tr></thead>
+      <tbody>${potrosnja.length?potrosnja.map(p=>`<tr><td>${(p.datum||'').replace('T',' ')}</td><td>${p.vrsta}</td><td>${p.ko||'—'}</td><td>${p.vozilo||'—'}</td><td>${p.gradiliste||'—'}</td><td>${p.firma||'—'}</td><td>${p.litara}L</td><td style="font-size:11px;color:#666">${p.poreklo||'— direktno —'}</td></tr>`).join(''):'<tr><td colspan="8" style="text-align:center;color:#999">Još ništa nije potrošeno iz ove serije</td></tr>'}</tbody>
     </table>
   </div>`;
   document.getElementById('print-receipt-btn').style.display='none';
