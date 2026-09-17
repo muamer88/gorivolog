@@ -1147,6 +1147,7 @@ try{
       <button class="btn btn-s" id="print-receipt-btn" style="display:none;padding:6px 13px;font-size:12px" onclick="prebaciNaUskiFormat()">🧾 Uska traka</button>
       <button class="btn btn-s admin-only" id="print-poreklo-btn" style="display:none;padding:6px 13px;font-size:12px" onclick="prikaziPorekloGoriva()">🧾 Porijeklo goriva</button>
       <button class="btn btn-s" id="print-share-btn" style="padding:6px 13px;font-size:12px" onclick="podijeliOtpremnicu()">📤 Podijeli</button>
+      <button class="btn btn-s" id="print-export-btn" style="display:none;padding:6px 13px;font-size:12px" onclick="exportPorekloExcel()">⬇ Excel</button>
       <button class="btn btn-pr" onclick="window.print()">🖨 Štampaj / PDF</button>
       <button class="btn btn-s" style="padding:6px 13px;font-size:12px" onclick="closeModal('printModal')">✕</button>
     </div>
@@ -1454,6 +1455,7 @@ function printTransfer(id){
   const t=S.transferi.find(x=>x.id===id);if(!t)return;
   document.getElementById('print-receipt-btn').style.display='none';
   document.getElementById('print-poreklo-btn').style.display='none';
+  document.getElementById('print-export-btn').style.display='none';
   const rsTag=document.getElementById('receiptPageStyle');if(rsTag)rsTag.textContent='';
   const cd=gC(t.cistijernDajeId),cp=gC(t.cistijernPrimaId),mf=S.mojaFirma;
   document.getElementById('print-title').textContent='Transfer goriva';
@@ -2495,18 +2497,31 @@ function prikaziPotrosnjuSerije(ulazId){
   potrosnja.sort((a,b)=>(a.datum||'').localeCompare(b.datum||''));
   const potroseno=potrosenoPoSerijama();
   const preostalo=u.litara-(potroseno[u.id]||0);
+  window._porekloExport={naslov:`Serija ${u.dobav||'?'} - ${(u.datum||'').split('T')[0]}`, potrosnja};
   document.getElementById('print-title').textContent=`Serija: ${u.dobav||'?'} — ${(u.datum||'').split('T')[0]}`;
-  document.getElementById('print-body').innerHTML=`<div style="padding:20px;color:#000">
+  document.getElementById('print-body').innerHTML=`<div style="padding:20px;color:#000;font-size:12px">
     <p><b>Cisterna:</b> ${c?c.reg:'?'} &nbsp; <b>Ukupno u seriji:</b> ${u.litara} L &nbsp; <b>Preostalo:</b> ${preostalo.toFixed(1)} L</p>
     <p><b>Broj fakture:</b> ${u.brFakture||'—'} &nbsp; <b>Cijena:</b> ${u.cijenaLitra?u.cijenaLitra+' KM/L':'—'} &nbsp; <b>Br. otpremnice dobavljača:</b> ${u.brDob||'—'}</p>
-    <table style="width:100%;border-collapse:collapse;margin-top:10px" border="1" cellpadding="6">
-      <thead><tr style="background:#eee"><th>Datum</th><th>Vrsta</th><th>Vozač</th><th>Vozilo</th><th>Gradilište</th><th>Firma</th><th>Litara</th><th>Put (ako je preko transfera)</th></tr></thead>
-      <tbody>${potrosnja.length?potrosnja.map(p=>`<tr><td>${(p.datum||'').replace('T',' ')}</td><td>${p.vrsta}</td><td>${p.ko||'—'}</td><td>${p.vozilo||'—'}</td><td>${p.gradiliste||'—'}</td><td>${p.firma||'—'}</td><td>${p.litara}L</td><td style="font-size:11px;color:#666">${p.poreklo||'— direktno —'}</td></tr>`).join(''):'<tr><td colspan="8" style="text-align:center;color:#999">Još ništa nije potrošeno iz ove serije</td></tr>'}</tbody>
+    <table style="width:100%;border-collapse:collapse;margin-top:10px;font-size:11px" border="1" cellpadding="3">
+      <thead><tr style="background:#eee"><th>Datum</th><th>Vrsta</th><th>Vozač</th><th>Vozilo</th><th>Gradilište</th><th>Firma</th><th>Litara</th><th>Put</th></tr></thead>
+      <tbody>${potrosnja.length?potrosnja.map(p=>`<tr><td>${(p.datum||'').replace('T',' ')}</td><td>${p.vrsta}</td><td>${p.ko||'—'}</td><td>${p.vozilo||'—'}</td><td>${p.gradiliste||'—'}</td><td>${p.firma||'—'}</td><td>${p.litara}L</td><td style="font-size:10px;color:#666">${p.poreklo||'—'}</td></tr>`).join(''):'<tr><td colspan="8" style="text-align:center;color:#999">Još ništa nije potrošeno iz ove serije</td></tr>'}</tbody>
     </table>
   </div>`;
   document.getElementById('print-receipt-btn').style.display='none';
   document.getElementById('print-poreklo-btn').style.display='none';
+  document.getElementById('print-export-btn').style.display='';
   openModal('printModal');
+}
+function exportPorekloExcel(){
+  const d=window._porekloExport;if(!d||typeof XLSX==='undefined'){toast('⚠ Nema podataka za izvoz.');return;}
+  const rows=[['Datum','Vrsta','Vozač','Vozilo','Gradilište','Firma','Litara','Put']];
+  d.potrosnja.forEach(p=>rows.push([(p.datum||'').replace('T',' '),p.vrsta,p.ko||'',p.vozilo||'',p.gradiliste||'',p.firma||'',p.litara,p.poreklo||'']));
+  const ws=XLSX.utils.aoa_to_sheet(rows);
+  ws['!cols']=[{wch:12},{wch:12},{wch:20},{wch:16},{wch:16},{wch:14},{wch:9},{wch:30}];
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,ws,'Porijeklo');
+  XLSX.writeFile(wb,d.naslov.replace(/[^a-zA-Z0-9]/g,'_')+'.xlsx');
+  toast('✓ Izvezeno!');
 }
 
 // ═══ RUČNA KOREKCIJA STANJA CISTERNE ═══
@@ -3606,6 +3621,7 @@ function showQR(id){
     </div>`;
   document.getElementById('print-receipt-btn').style.display='none';
   document.getElementById('print-poreklo-btn').style.display='none';
+  document.getElementById('print-export-btn').style.display='none';
   openModal('printModal');
   setTimeout(()=>{
     const el=document.getElementById('qr-single');
@@ -3625,6 +3641,7 @@ function printAllQR(){
     </div>`;
   document.getElementById('print-receipt-btn').style.display='none';
   document.getElementById('print-poreklo-btn').style.display='none';
+  document.getElementById('print-export-btn').style.display='none';
   openModal('printModal');
   setTimeout(()=>{
     const grid=document.getElementById('qr-all-grid');
