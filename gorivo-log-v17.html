@@ -2577,7 +2577,7 @@ function renderPregled(){
     const matchingUlazIds=new Set(S.ulazi.filter(u=>(u.brFakture||'').toLowerCase().includes(brojQ)).map(u=>u.id));
     list=list.filter(o=>
       (o.brojOtp||'').toLowerCase().includes(brojQ) ||
-      o.stavke.some(s=>(s.izvorUlaza||[]).some(x=>matchingUlazIds.has(x.ulazId)))
+      o.stavke.some(s=>(s.izvorUlaza||[]).some(x=>izvorSeSvodiNaFakturu(x.ulazId, matchingUlazIds)))
     );
   }
   const el=document.getElementById('tbl-pregled');
@@ -2996,6 +2996,20 @@ function populateIzvFiltere(){
 
 // Izračunava STVARAN trošak (KM) prateći lanac unazad do originalne fakture (kroz eventualne transfere).
 // Vraća 0 ako porijeklo nije poznato ili faktura nema unesenu cijenu (ne izmišlja brojeve).
+// Provjerava da li se dati izvor (direktan ulaz ILI transfer) na kraju svodi na neku od datih faktura,
+// prateći lanac transfera unazad (isti princip kao resolveChainCost, samo vraća da/ne umjesto troška).
+function izvorSeSvodiNaFakturu(ulazId, matchingSet, depth){
+  depth=depth||0;
+  if(depth>8 || !ulazId) return false;
+  if(matchingSet.has(ulazId)) return true;
+  if(String(ulazId).startsWith('transfer:')){
+    const tid=ulazId.split(':')[1];
+    const t=S.transferi.find(y=>y.id===tid);
+    if(!t||!t.izvorUlaza) return false;
+    return t.izvorUlaza.some(src=>izvorSeSvodiNaFakturu(src.ulazId, matchingSet, depth+1));
+  }
+  return false;
+}
 function resolveChainCost(ulazId, litara, depth){
   if(depth>8 || !ulazId) return 0;
   if(String(ulazId).startsWith('transfer:')){
