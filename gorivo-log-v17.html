@@ -2582,10 +2582,13 @@ function renderPregled(){
   }
   const el=document.getElementById('tbl-pregled');
   if(!list.length){el.innerHTML='<div class="empty">Nema rezultata</div>';return;}
-  el.innerHTML='<table><thead><tr><th>Broj</th><th>Datum</th><th>Cisterna</th><th>Gradilište</th><th>Gorivo</th><th>Voz.</th><th>Ukupno L</th><th class="admin-only"></th></tr></thead><tbody>'+
+  el.innerHTML='<table><thead><tr><th>Broj</th><th>Datum</th><th>Cisterna</th><th>Gradilište</th><th>Faktura</th><th>Gorivo</th><th>Voz.</th><th>Ukupno L</th><th class="admin-only"></th></tr></thead><tbody>'+
     list.map(o=>{const c=gC(o.cistijernId),g=gG(o.gradId),uk=o.stavke.reduce((a,s)=>a+s.litara,0);
       const storno=o.stornirano;
-      return`<tr style="${storno?'opacity:.55':''}"><td class="mono" style="font-size:11px">${o.brojOtp}${storno?' <span class="tag t-warn" style="font-size:9px">STORNO</span>':''}</td><td class="mono" style="font-size:12px;${storno?'text-decoration:line-through':''}">${o.datum}</td><td><span class="tag t-ok">${c?c.reg:'?'}</span></td><td><span class="tag t-g">${g?g.naziv:'?'}</span></td><td style="font-size:12px">${o.gorivo}</td><td style="text-align:center">${o.stavke.length}</td><td><span class="tag ${storno?'t-warn':'t-l'}">${uk}L</span></td><td class="admin-only" style="white-space:nowrap">
+      const fakture=new Set();
+      o.stavke.forEach(s=>(s.izvorUlaza||[]).forEach(x=>resolveChainFakture(x.ulazId,0,fakture)));
+      const fakturaTxt=[...fakture].join(', ')||'—';
+      return`<tr style="${storno?'opacity:.55':''}"><td class="mono" style="font-size:11px">${o.brojOtp}${storno?' <span class="tag t-warn" style="font-size:9px">STORNO</span>':''}</td><td class="mono" style="font-size:12px;${storno?'text-decoration:line-through':''}">${o.datum}</td><td><span class="tag t-ok">${c?c.reg:'?'}</span></td><td><span class="tag t-g">${g?g.naziv:'?'}</span></td><td class="mono" style="font-size:11px;color:var(--mut2)">${fakturaTxt}</td><td style="font-size:12px">${o.gorivo}</td><td style="text-align:center">${o.stavke.length}</td><td><span class="tag ${storno?'t-warn':'t-l'}">${uk}L</span></td><td class="admin-only" style="white-space:nowrap">
         <button class="btn btn-pr" onclick="printOtp('${o.id}')">🖨</button>
         ${!storno?`<button class="btn btn-s" style="padding:6px 8px;font-size:11px" onclick="openEditStavke('otpremnice','${o.id}')" title="Uredi">✎</button>
         <button class="btn btn-r" style="padding:6px 8px;font-size:11px" onclick="openStornoModal('otpremnice','${o.id}')" title="Storniraj">↩</button>`:`<span style="font-size:10px;color:var(--mut2)">${o.stornoRazlog||''}</span>`}
@@ -2998,6 +3001,18 @@ function populateIzvFiltere(){
 // Vraća 0 ako porijeklo nije poznato ili faktura nema unesenu cijenu (ne izmišlja brojeve).
 // Provjerava da li se dati izvor (direktan ulaz ILI transfer) na kraju svodi na neku od datih faktura,
 // prateći lanac transfera unazad (isti princip kao resolveChainCost, samo vraća da/ne umjesto troška).
+// Skuplja SVE brojeve faktura na koje se dati izvor (direktan ili preko transfera) na kraju svodi.
+function resolveChainFakture(ulazId, depth, izlaz){
+  depth=depth||0; if(depth>8||!ulazId) return;
+  if(String(ulazId).startsWith('transfer:')){
+    const tid=ulazId.split(':')[1];
+    const t=S.transferi.find(y=>y.id===tid);
+    if(t&&t.izvorUlaza) t.izvorUlaza.forEach(src=>resolveChainFakture(src.ulazId,depth+1,izlaz));
+    return;
+  }
+  const u=S.ulazi.find(y=>y.id===ulazId);
+  if(u&&u.brFakture) izlaz.add(u.brFakture);
+}
 function izvorSeSvodiNaFakturu(ulazId, matchingSet, depth){
   depth=depth||0;
   if(depth>8 || !ulazId) return false;
