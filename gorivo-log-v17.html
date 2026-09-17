@@ -2602,13 +2602,14 @@ function renderPregled(){
   }
   const el=document.getElementById('tbl-pregled');
   if(!list.length){el.innerHTML='<div class="empty">Nema rezultata</div>';return;}
-  el.innerHTML='<table><thead><tr><th>Broj</th><th>Datum</th><th>Cisterna</th><th>Gradilište</th><th>Faktura</th><th>Gorivo</th><th>Voz.</th><th>Ukupno L</th><th class="admin-only"></th></tr></thead><tbody>'+
+  el.innerHTML='<table><thead><tr><th>Broj</th><th>Datum</th><th>Cisterna</th><th>Gradilište</th><th>Firma</th><th>Faktura</th><th>Gorivo</th><th>Voz.</th><th>Ukupno L</th><th class="admin-only"></th></tr></thead><tbody>'+
     list.map(o=>{const c=gC(o.cistijernId),g=gG(o.gradId),uk=o.stavke.reduce((a,s)=>a+s.litara,0);
       const storno=o.stornirano;
       const fakture=new Set();
       o.stavke.forEach(s=>(s.izvorUlaza||[]).forEach(x=>resolveChainFakture(x.ulazId,0,fakture)));
       const fakturaTxt=[...fakture].join(', ')||'—';
-      return`<tr style="${storno?'opacity:.55':''}"><td class="mono" style="font-size:11px">${o.brojOtp}${storno?' <span class="tag t-warn" style="font-size:9px">STORNO</span>':''}</td><td class="mono" style="font-size:12px;${storno?'text-decoration:line-through':''}">${o.datum}</td><td><span class="tag t-ok">${c?c.reg:'?'}</span></td><td><span class="tag t-g">${g?g.naziv:'?'}</span></td><td class="mono" style="font-size:11px;color:var(--mut2)">${fakturaTxt}</td><td style="font-size:12px">${o.gorivo}</td><td style="text-align:center">${o.stavke.length}</td><td><span class="tag ${storno?'t-warn':'t-l'}">${uk}L</span></td><td class="admin-only" style="white-space:nowrap">
+      const firmeOtp=[...new Set(o.stavke.map(s=>{const f=gF(stavkaVehInfo(s).firmaId);return f?f.naziv:null;}).filter(Boolean))].join(' / ')||'—';
+      return`<tr style="${storno?'opacity:.55':''}"><td class="mono" style="font-size:11px">${o.brojOtp}${storno?' <span class="tag t-warn" style="font-size:9px">STORNO</span>':''}</td><td class="mono" style="font-size:12px;${storno?'text-decoration:line-through':''}">${o.datum}</td><td><span class="tag t-ok">${c?c.reg:'?'}</span></td><td><span class="tag t-g">${g?g.naziv:'?'}</span></td><td style="font-size:12px">${firmeOtp}</td><td class="mono" style="font-size:11px;color:var(--mut2)">${fakturaTxt}</td><td style="font-size:12px">${o.gorivo}</td><td style="text-align:center">${o.stavke.length}</td><td><span class="tag ${storno?'t-warn':'t-l'}">${uk}L</span></td><td class="admin-only" style="white-space:nowrap">
         <button class="btn btn-pr" onclick="printOtp('${o.id}')">🖨</button>
         ${!storno?`<button class="btn btn-s" style="padding:6px 8px;font-size:11px" onclick="openEditStavke('otpremnice','${o.id}')" title="Uredi">✎</button>
         <button class="btn btn-r" style="padding:6px 8px;font-size:11px" onclick="openStornoModal('otpremnice','${o.id}')" title="Storniraj">↩</button>`:`<span style="font-size:10px;color:var(--mut2)">${o.stornoRazlog||''}</span>`}
@@ -3757,6 +3758,7 @@ function printOtp(id,obj){
     <div class="otp-meta">
       <div class="otp-mb"><div class="otp-ml">Cisterna</div><div class="otp-mv">${c?c.reg:'—'}</div><div class="otp-ms">Vozač: ${c?c.vozac:'—'}</div></div>
       <div class="otp-mb"><div class="otp-ml">Gradilište</div><div class="otp-mv">${g?g.naziv:'—'}</div><div class="otp-ms">${g?g.lok||'':''}</div></div>
+      <div class="otp-mb"><div class="otp-ml">Firma</div><div class="otp-mv">${(()=>{const firme=[...new Set(o.stavke.map(s=>{const f=gF(stavkaVehInfo(s).firmaId);return f?f.naziv:null;}).filter(Boolean))];return firme.length?firme.join(' / '):'—';})()}</div></div>
       <div class="otp-mb"><div class="otp-ml">Gorivo</div><div class="otp-mv">${o.gorivo}</div></div>
       <div class="otp-mb"><div class="otp-ml">Datum</div><div class="otp-mv">${o.datum}</div><div class="otp-ms">${o.stavke.length} vozila</div></div>
     </div>
