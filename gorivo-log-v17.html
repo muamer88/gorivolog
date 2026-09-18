@@ -2744,10 +2744,13 @@ function dodajNovuStavkuUEdit(tip){
         <button type="button" class="btn btn-r" style="padding:6px 10px;font-size:11px" onclick="this.closest('[data-nova-id]').remove()">✕</button>
       </div>`;
   }else{
-    const vozilaOpcije=S.vozila.filter(jeAktivan).map(v=>`<option value="${v.id}">${v.reg} — ${v.model||''}</option>`).join('');
     div.innerHTML=`<label style="color:var(--acc)">➕ Novo vozilo</label>
-      <div style="display:flex;gap:8px;margin:6px 0">
-        <select data-nova="${nid}" data-f="vozilo" style="flex:1"><option value="">— odaberi vozilo —</option>${vozilaOpcije}</select>
+      <div style="display:flex;gap:8px;margin:6px 0;position:relative">
+        <div style="flex:1;position:relative">
+          <input type="text" id="novi-voz-q-${nid}" placeholder="Traži registraciju, garažni broj, model..." oninput="filtrirajNoviVozEdit('${nid}')" autocomplete="off" style="width:100%">
+          <input type="hidden" data-nova="${nid}" data-f="vozilo">
+          <div id="novi-voz-drop-${nid}" class="vdrop" style="display:none;position:absolute;top:100%;left:0;right:0;z-index:50"></div>
+        </div>
         <input type="text" data-nova="${nid}" data-f="vozacIme" placeholder="Ime vozača" style="flex:1">
       </div>
       <div style="display:flex;gap:8px;align-items:center">
@@ -2757,6 +2760,22 @@ function dodajNovuStavkuUEdit(tip){
       </div>`;
   }
   cont.appendChild(div);
+}
+function filtrirajNoviVozEdit(nid){
+  const q=(document.getElementById('novi-voz-q-'+nid).value||'').trim().toLowerCase();
+  const drop=document.getElementById('novi-voz-drop-'+nid);
+  if(!q){drop.style.display='none';return;}
+  const res=S.vozila.filter(v=>jeAktivan(v)&&(v.reg.toLowerCase().includes(q)||(v.garazniBr||'').toLowerCase().includes(q)||(v.model||'').toLowerCase().includes(q))).slice(0,10);
+  if(!res.length){drop.innerHTML='<div class="vdrop-item" style="color:var(--mut2)">Nema rezultata</div>';drop.style.display='block';return;}
+  drop.innerHTML=res.map(v=>`<div class="vdrop-item" onclick="odaberiNoviVozEdit('${nid}','${v.id}')"><div class="vdrop-reg">${v.reg}${v.garazniBr?` <span style="color:var(--acc4)">(${v.garazniBr})</span>`:''}</div><div class="vdrop-sub">${v.model||''}</div></div>`).join('');
+  drop.style.display='block';
+}
+function odaberiNoviVozEdit(nid,vehId){
+  const v=gV(vehId);if(!v)return;
+  document.getElementById('novi-voz-q-'+nid).value=`${v.reg}${v.garazniBr?' ('+v.garazniBr+')':''}`;
+  const hid=document.querySelector(`input[type="hidden"][data-nova="${nid}"][data-f="vozilo"]`);
+  if(hid) hid.value=vehId;
+  document.getElementById('novi-voz-drop-'+nid).style.display='none';
 }
 
 // ═══ RAZDJELA STAVKE PO VIŠE GRADILIŠTA (kad kamion radi na više njih u istom danu) ═══
