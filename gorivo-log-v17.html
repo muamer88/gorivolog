@@ -1684,10 +1684,11 @@ function formatMjerilo(s, isB){
 
 function zadnjaKilometraza(vehId, isB){
   let poslednja=null, key=null;
+  const vSel=gV(vehId);
   S.otpremnice.forEach(o=>{
     if(o.stornirano) return; // stornirane otpremnice se ne broje kao "zadnje poznato"
     (o.stavke||[]).forEach(s=>{
-      if(s.kamionId!==vehId) return;
+      if(s.kamionId!==vehId && !(vSel && regoviSeOdgovaraju(stavkaVehInfo(s).reg, vSel.reg))) return;
       const val = isB ? (s.motoSati!=null?s.motoSati:s.motoSatiK) : (s.km!=null?s.km:s.kmKraj);
       if(val==null) return;
       const k = o.datum+'T'+(s.vrijeme||'00:00'); // datum+vrijeme za tačan hronoloski redoslijed (bitno kad ima više unosa istog dana)
@@ -2757,7 +2758,8 @@ function dodajNovuStavkuUEdit(tip){
         <input type="number" step=".5" data-nova="${nid}" data-f="litara" placeholder="Litara" style="flex:1">
         <input type="number" step=".1" data-nova="${nid}" data-f="mjerilo" placeholder="KM / Moto sati" style="flex:1">
         <button type="button" class="btn btn-r" style="padding:6px 10px;font-size:11px" onclick="this.closest('[data-nova-id]').remove()">✕</button>
-      </div>`;
+      </div>
+      <div id="novi-voz-zadnje-${nid}" style="font-size:11px;color:var(--mut2);margin-top:4px"></div>`;
   }
   cont.appendChild(div);
 }
@@ -2777,6 +2779,12 @@ function odaberiNoviVozEdit(nid,vehId){
   if(hid) hid.value=vehId;
   const vozacInp=document.querySelector(`[data-nova="${nid}"][data-f="vozacIme"]`);
   if(vozacInp && !vozacInp.value) vozacInp.value=v.vozac||'';
+  const isB=koristiMotoSate(v);
+  const zadnja=zadnjaKilometraza(vehId,isB);
+  const zEl=document.getElementById('novi-voz-zadnje-'+nid);
+  if(zEl) zEl.textContent = zadnja!=null ? `Zadnje poznato: ${zadnja} ${isB?'mh':'km'}` : 'Nema ranijeg unosa za ovo vozilo';
+  const mjInp=document.querySelector(`[data-nova="${nid}"][data-f="mjerilo"]`);
+  if(mjInp) mjInp.placeholder = isB?'Moto sati':'Kilometraža';
   document.getElementById('novi-voz-drop-'+nid).style.display='none';
 }
 
