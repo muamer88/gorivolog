@@ -2775,6 +2775,8 @@ function odaberiNoviVozEdit(nid,vehId){
   document.getElementById('novi-voz-q-'+nid).value=`${v.reg}${v.garazniBr?' ('+v.garazniBr+')':''}`;
   const hid=document.querySelector(`input[type="hidden"][data-nova="${nid}"][data-f="vozilo"]`);
   if(hid) hid.value=vehId;
+  const vozacInp=document.querySelector(`[data-nova="${nid}"][data-f="vozacIme"]`);
+  if(vozacInp && !vozacInp.value) vozacInp.value=v.vozac||'';
   document.getElementById('novi-voz-drop-'+nid).style.display='none';
 }
 
