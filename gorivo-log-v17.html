@@ -2879,7 +2879,7 @@ async function sacuvajEditStavke(){
       }else if(f==='mjerilo'){
         const val=parseFloat(inp.value);
         if(isNaN(val))return;
-        const v=gV(noveStavke[i].kamionId),isB=v&&koristiMotoSate(v);
+        const isB=koristiMotoSate({tip:stavkaVehInfo(noveStavke[i]).tip});
         const staro=isB?(noveStavke[i].motoSati!=null?noveStavke[i].motoSati:noveStavke[i].motoSatiK):(noveStavke[i].km!=null?noveStavke[i].km:noveStavke[i].kmKraj);
         if(staro!==val){
           izmjene.push(`stavka ${i+1}: ${isB?'moto sati':'km'} ${staro}→${val}`);
