@@ -2512,7 +2512,7 @@ function tragZaSerijom(searchKey, poreklo){
               vozilo=s.reg||'—';
               const f=S.treceLiceFirme.find(x=>x.id===rec.treceLiceId); firma=f?f.naziv:'—';
             }
-            rezultat.push({datum:rec.datum,vrsta,litara:x.litara,ko:s.vozacIme||s.vozac||(rec.cistijernPrimaId?'transfer u '+(gC(rec.cistijernPrimaId)?.reg||'?'):''),vozilo,gradiliste,firma,poreklo});
+            rezultat.push({datum:rec.datum,vrsta,litara:x.litara,ukupnoNaStavci:(vrsta!=='Transfer'?s.litara:null),ko:s.vozacIme||s.vozac||(rec.cistijernPrimaId?'transfer u '+(gC(rec.cistijernPrimaId)?.reg||'?'):''),vozilo,gradiliste,firma,poreklo});
             if(vrsta==='Transfer'){
               rezultat=rezultat.concat(tragZaSerijom('transfer:'+rec.id, (poreklo?poreklo+' → ':'')+'preko transfera '+(rec.datum||'').split('T')[0]));
             }
@@ -2539,11 +2539,14 @@ function prikaziPotrosnjuSerije(ulazId){
   document.getElementById('print-body').innerHTML=`<div style="padding:20px;color:#000;font-size:12px">
     <p><b>Cisterna:</b> ${c?c.reg:'?'} &nbsp; <b>Ukupno u seriji:</b> ${u.litara} L &nbsp; <b>Preostalo:</b> ${preostalo.toFixed(1)} L</p>
     <p><b>Broj fakture:</b> ${u.brFakture||'—'} &nbsp; <b>Cijena:</b> ${u.cijenaLitra?u.cijenaLitra+' KM/L':'—'} &nbsp; <b>Br. otpremnice dobavljača:</b> ${u.brDob||'—'}</p>
-    <p style="font-size:10px;color:#888;margin-top:4px">ℹ️ Litre u tabeli ispod su SAMO dio koji potiče baš iz ove fakture. Ako je vozilo tog dana sipalo i iz prethodne/naredne serije (cisterna nije bila prazna/puna tačno na granici), na otpremnici će pisati veći/drugačiji ukupan broj litara za to vozilo — to je ispravno, ne greška.</p>
+    <p style="font-size:10px;color:#888;margin-top:4px">ℹ️ Prikazuju se samo litre iz OVE fakture — ako ima razlike naspram otpremnice, piše žuto ispod tog reda.</p>
     <div style="overflow-x:auto">
     <table style="width:100%;min-width:680px;border-collapse:collapse;margin-top:10px;font-size:10px" border="1" cellpadding="4">
       <thead><tr style="background:#eee"><th style="white-space:nowrap">Datum</th><th style="white-space:nowrap">Vrsta</th><th>Vozač</th><th style="white-space:nowrap">Vozilo</th><th>Gradilište</th><th>Firma</th><th style="white-space:nowrap">Litara</th><th>Put</th></tr></thead>
-      <tbody>${potrosnja.length?potrosnja.map(p=>`<tr><td style="white-space:nowrap">${(p.datum||'').replace('T',' ')}</td><td style="white-space:nowrap">${p.vrsta}</td><td style="white-space:nowrap">${p.ko||'—'}</td><td style="white-space:nowrap">${p.vozilo||'—'}</td><td style="white-space:nowrap">${p.gradiliste||'—'}</td><td style="white-space:nowrap">${p.firma||'—'}</td><td style="white-space:nowrap">${p.litara}L</td><td style="font-size:9px;color:#666">${p.poreklo||'—'}</td></tr>`).join(''):'<tr><td colspan="8" style="text-align:center;color:#999">Još ništa nije potrošeno iz ove serije</td></tr>'}</tbody>
+      <tbody>${potrosnja.length?potrosnja.map(p=>{
+        const razlika = (p.ukupnoNaStavci!=null && Math.abs(p.ukupnoNaStavci-p.litara)>0.01) ? `<div style="font-size:9px;color:#b8860b">ukupno na otpremnici: ${p.ukupnoNaStavci}L (+${(p.ukupnoNaStavci-p.litara).toFixed(1)}L iz druge fakture)</div>` : '';
+        return `<tr><td style="white-space:nowrap">${(p.datum||'').replace('T',' ')}</td><td style="white-space:nowrap">${p.vrsta}</td><td style="white-space:nowrap">${p.ko||'—'}</td><td style="white-space:nowrap">${p.vozilo||'—'}</td><td style="white-space:nowrap">${p.gradiliste||'—'}</td><td style="white-space:nowrap">${p.firma||'—'}</td><td style="white-space:nowrap">${p.litara}L${razlika}</td><td style="font-size:9px;color:#666">${p.poreklo||'—'}</td></tr>`;
+      }).join(''):'<tr><td colspan="8" style="text-align:center;color:#999">Još ništa nije potrošeno iz ove serije</td></tr>'}</tbody>
     </table>
     </div>
   </div>`;
@@ -2554,10 +2557,10 @@ function prikaziPotrosnjuSerije(ulazId){
 }
 function exportPorekloExcel(){
   const d=window._porekloExport;if(!d||typeof XLSX==='undefined'){toast('⚠ Nema podataka za izvoz.');return;}
-  const rows=[['Datum','Vrsta','Vozač','Vozilo','Gradilište','Firma','Litara','Put']];
-  d.potrosnja.forEach(p=>rows.push([(p.datum||'').replace('T',' '),p.vrsta,p.ko||'',p.vozilo||'',p.gradiliste||'',p.firma||'',p.litara,p.poreklo||'']));
+  const rows=[['Datum','Vrsta','Vozač','Vozilo','Gradilište','Firma','Litara (iz ove fakture)','Ukupno na otpremnici','Put']];
+  d.potrosnja.forEach(p=>rows.push([(p.datum||'').replace('T',' '),p.vrsta,p.ko||'',p.vozilo||'',p.gradiliste||'',p.firma||'',p.litara,p.ukupnoNaStavci!=null?p.ukupnoNaStavci:'',p.poreklo||'']));
   const ws=XLSX.utils.aoa_to_sheet(rows);
-  ws['!cols']=[{wch:12},{wch:12},{wch:20},{wch:16},{wch:16},{wch:14},{wch:9},{wch:30}];
+  ws['!cols']=[{wch:12},{wch:12},{wch:20},{wch:16},{wch:16},{wch:14},{wch:12},{wch:14},{wch:30}];
   const wb=XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb,ws,'Porijeklo');
   XLSX.writeFile(wb,d.naslov.replace(/[^a-zA-Z0-9]/g,'_')+'.xlsx');
