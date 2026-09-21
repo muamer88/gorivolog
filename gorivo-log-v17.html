@@ -3699,6 +3699,42 @@ function renderVozilaTbl(){
     list.map(v=>renderVehRow(v)).join('')+'</tbody></table></div>';
 }
 
+// Popravlja stare otpremnice gdje je km/moto-sati sačuvano u pogrešno polje za dato vozilo
+// (npr. vozilo je bilo pogrešno kategorisano kao kamion pa se moto-sati sačuvalo u km polje).
+async function popraviMjeriloVozila(vehId){
+  const v=gV(vehId);if(!v)return;
+  const ispravnoIsB=koristiMotoSate(v);
+  const zaIspraviti=[]; // {otpId, noveStavke}
+  let brojStavki=0;
+  S.otpremnice.forEach(o=>{
+    let promijenjeno=false;
+    const noveStavke=o.stavke.map(s=>{
+      const pripada = s.kamionId===vehId || regoviSeOdgovaraju(stavkaVehInfo(s).reg, v.reg);
+      if(!pripada) return s;
+      const imaKm = s.km!=null, imaSati = s.motoSati!=null;
+      // Vrijednost je u pogrešnom polju ako: treba biti sati ali je u km (i sati prazno), ili obrnuto
+      if(ispravnoIsB && imaKm && !imaSati){
+        promijenjeno=true; brojStavki++;
+        return {...s, motoSati:s.km, km:null};
+      }
+      if(!ispravnoIsB && imaSati && !imaKm){
+        promijenjeno=true; brojStavki++;
+        return {...s, km:s.motoSati, motoSati:null};
+      }
+      return s;
+    });
+    if(promijenjeno) zaIspraviti.push({otpId:o.id, noveStavke});
+  });
+  if(!zaIspraviti.length){toast(`✓ Nema šta da se popravi — sve stavke za ${v.reg} su već u ispravnom polju (${ispravnoIsB?'moto sati':'km'}).`,4000);return;}
+  if(!confirm(`Pronađeno ${brojStavki} stavki u ${zaIspraviti.length} otpremnica gdje je vrijednost u pogrešnom polju za ${v.reg}.\n\nPrebaciti ih u ispravno polje (${ispravnoIsB?'moto sati':'km'})? Ova radnja se ne može poništiti jednim klikom.`)) return;
+  try{
+    for(const item of zaIspraviti){
+      await window.FB.setDoc(window.FB.docRef('otpremnice',item.otpId),{stavke:item.noveStavke},{merge:true});
+    }
+    logAkcija('Popravljeno km/moto-sati polje', `${v.reg}: ${brojStavki} stavki u ${zaIspraviti.length} otpremnica prebačeno u ${ispravnoIsB?'moto sati':'km'}`);
+    toast(`✓ Popravljeno ${brojStavki} stavki u ${zaIspraviti.length} otpremnica.`,4000);
+  }catch(e){toast('⚠ Greška: '+e.message,5000);}
+}
 function renderVehRow(v){
   const f=gF(v.firmaId);
   const neaktivno=!jeAktivan(v);
@@ -3713,6 +3749,7 @@ function renderVehRow(v){
     <td>${neaktivno?'<span class="tag t-warn" style="font-size:10px">NEAKTIVNO</span>':'<span class="tag t-ok" style="font-size:10px">Aktivno</span>'}</td>
     <td style="text-align:center;white-space:nowrap">
       <button class="btn btn-qr" style="padding:4px 8px;font-size:11px" onclick="showQR('${v.id}')">QR</button>
+      <button class="btn btn-s" style="padding:4px 8px;font-size:11px" onclick="popraviMjeriloVozila('${v.id}')" title="Popravi km/moto-sati u starim otpremnicama za ovo vozilo">🔧</button>
       <button class="btn btn-s" style="padding:4px 8px;font-size:11px" onclick="editVehRow('${v.id}')">✏️</button>
       <button class="btn btn-r" onclick="delVeh('${v.id}')">✕</button>
     </td>
