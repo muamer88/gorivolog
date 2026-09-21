@@ -707,6 +707,14 @@ try{
   </div>
   <div class="card admin-only">
     <div class="card-title">📋 Ulazi</div>
+    <div class="fil" style="margin-bottom:12px">
+      <input type="text" id="ul-fil-q" placeholder="Faktura, otpremnica, dobavljač..." oninput="renderUl()" style="min-width:200px">
+      <input type="date" id="ul-fil-od" onchange="renderUl()">
+      <input type="date" id="ul-fil-do" onchange="renderUl()">
+      <button class="btn btn-s" onclick="ulFilPeriod('sedmica')">Ova sedmica</button>
+      <button class="btn btn-s" onclick="ulFilPeriod('mjesec')">Ovaj mjesec</button>
+      <button class="btn btn-s" onclick="ulFilReset()">✕ Očisti</button>
+    </div>
     <div id="lst-ul"><div class="empty">Nema unosa</div></div>
   </div>
 </div>
@@ -2497,12 +2505,44 @@ async function deleteUl(id){
     toast('✓ Ulaz obrisan');
   }catch(e){toast('⚠ Greška: '+e.message);}
 }
+function ulFilPeriod(tip){
+  const d=new Date();
+  const p2=n=>String(n).padStart(2,'0');
+  const fmt=dt=>`${dt.getFullYear()}-${p2(dt.getMonth()+1)}-${p2(dt.getDate())}`;
+  if(tip==='sedmica'){
+    const dan=(d.getDay()+6)%7; // ponedjeljak=0
+    const pon=new Date(d); pon.setDate(d.getDate()-dan);
+    document.getElementById('ul-fil-od').value=fmt(pon);
+    document.getElementById('ul-fil-do').value=fmt(d);
+  }else if(tip==='mjesec'){
+    document.getElementById('ul-fil-od').value=`${d.getFullYear()}-${p2(d.getMonth()+1)}-01`;
+    document.getElementById('ul-fil-do').value=fmt(d);
+  }
+  renderUl();
+}
+function ulFilReset(){
+  document.getElementById('ul-fil-q').value='';
+  document.getElementById('ul-fil-od').value='';
+  document.getElementById('ul-fil-do').value='';
+  renderUl();
+}
 function renderUl(){
   const el=document.getElementById('lst-ul');
   if(!S.ulazi.length){el.innerHTML='<div class="empty">Nema unosa</div>';return;}
   const potroseno=potrosenoPoSerijamaKrajnje();
+  const q=(document.getElementById('ul-fil-q')?.value||'').trim().toLowerCase();
+  const od=document.getElementById('ul-fil-od')?.value||'', do_=document.getElementById('ul-fil-do')?.value||'';
+  let lista=[...S.ulazi].sort((a,b)=>(a.datum||'').localeCompare(b.datum||''));
+  lista=lista.filter(u=>{
+    const dDatum=(u.datum||'').split('T')[0];
+    if(od && dDatum<od) return false;
+    if(do_ && dDatum>do_) return false;
+    if(q && !((u.brFakture||'').toLowerCase().includes(q) || (u.brDob||'').toLowerCase().includes(q) || (u.dobav||'').toLowerCase().includes(q))) return false;
+    return true;
+  });
+  if(!lista.length){el.innerHTML='<div class="empty">Nema rezultata za ovaj filter</div>';return;}
   el.innerHTML='<div class="tw"><table><thead><tr><th>Datum</th><th>Cisterna</th><th>Dobavljač</th><th>Litara</th><th class="admin-only">Faktura</th><th>Preostalo</th><th></th></tr></thead><tbody>'+
-    [...S.ulazi].sort((a,b)=>(a.datum||'').localeCompare(b.datum||'')).map(u=>{
+    lista.map(u=>{
       const c=gC(u.cistijernId);const isKor=u.dobav==='KOREKCIJA';
       const preostalo=isKor?null:u.litara-(potroseno[u.id]||0);
       const potroseniPct=isKor?0:Math.round(100*((potroseno[u.id]||0)/u.litara));
