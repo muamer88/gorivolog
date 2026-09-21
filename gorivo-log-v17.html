@@ -3734,6 +3734,11 @@ function editVehRow(id){
       <option value="cisterna" ${v.tip==='cisterna'?'selected':''}>🚿 Cisterna/Četka</option>
       <option value="agregat" ${v.tip==='agregat'?'selected':''}>🔌 Agregat</option>
       <option value="malo" ${v.tip==='malo'?'selected':''}>🚗 Malo</option>
+    </select>
+    <select id="ve-mjerilo-${id}" style="margin-top:4px;font-size:10px" title="Override - ako je pogrešno prepoznato po tipu">
+      <option value="" ${!v.mjeriloTip?'selected':''}>Mjerilo: auto (po tipu)</option>
+      <option value="km" ${v.mjeriloTip==='km'?'selected':''}>Mjerilo: KM (uvijek)</option>
+      <option value="sati" ${v.mjeriloTip==='sati'?'selected':''}>Mjerilo: Moto sati (uvijek)</option>
     </select></td>
     <td class="td-edit"><input id="ve-mod-${id}" value="${v.model||''}"></td>
     <td class="td-edit"><select id="ve-fir-${id}">${firOpts}</select></td>
@@ -3753,6 +3758,7 @@ async function saveVehEdit(id){
     serijskiBr:document.getElementById('ve-serijski-'+id).value.trim().toUpperCase(),
     garazniBr:document.getElementById('ve-garazni-'+id).value.trim().toUpperCase(),
     tip:document.getElementById('ve-tip-'+id).value,
+    mjeriloTip:document.getElementById('ve-mjerilo-'+id).value,
     model:document.getElementById('ve-mod-'+id).value.trim(),
     firmaId:document.getElementById('ve-fir-'+id).value,
     vozac:document.getElementById('ve-voz-'+id).value.trim(),
