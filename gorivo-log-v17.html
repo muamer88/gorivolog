@@ -695,7 +695,7 @@ try{
       <div class="fg" style="grid-column:1/3"><label>Dobavljač</label><input id="ul-dob" placeholder="Naziv dobavljača d.o.o."></div>
       <div class="fg" style="grid-column:3/5"><label>Br. otpremnice dobavljača</label><input id="ul-brdob" placeholder="DOB-2026-0881"></div>
       <div class="fg"><label>Vrsta goriva</label><select id="ul-gor"></select></div>
-      <div class="fg"><label>Litara preuzeto</label><input type="number" id="ul-lit" min="0" step=".5" placeholder="5000"></div>
+      <div class="fg"><label>Litara preuzeto</label><input type="number" id="ul-lit" min="0" step=".5" placeholder="5000" oninput="prikaziCijenuSaPdv()"></div>
       <div class="fg admin-only"><label>Broj fakture</label><input id="ul-fakt" placeholder="FAKT-2026-xxx"></div>
       <div class="fg admin-only"><label>Cijena po litru BEZ PDV-a (KM)</label><input type="number" id="ul-cij" min="0" step=".001" placeholder="2.150" oninput="prikaziCijenuSaPdv()">
         <div id="ul-cij-pdv" style="font-size:11px;color:var(--mut2);margin-top:3px"></div>
@@ -2450,9 +2450,15 @@ const PDV_STOPA=0.17; // standardna stopa PDV-a u BiH (17%)
 function prikaziCijenuSaPdv(){
   const el=document.getElementById('ul-cij-pdv');if(!el)return;
   const bezPdv=parseFloat(document.getElementById('ul-cij').value);
+  const lit=parseFloat(document.getElementById('ul-lit')?.value);
   if(isNaN(bezPdv)||bezPdv<=0){el.textContent='';return;}
   const saPdv=bezPdv*(1+PDV_STOPA);
-  el.textContent=`Sa PDV-om (17%): ${saPdv.toFixed(3)} KM/L`;
+  let txt=`Sa PDV-om (17%): ${saPdv.toFixed(3)} KM/L`;
+  if(!isNaN(lit)&&lit>0){
+    const iznos=lit*bezPdv;
+    txt+=` &nbsp;·&nbsp; Ukupno: ${iznos.toFixed(2)} KM (sa PDV: ${(iznos*1.17).toFixed(2)} KM)`;
+  }
+  el.innerHTML=txt;
 }
 function editUl(id){
   const u=S.ulazi.find(x=>x.id===id);if(!u)return;
@@ -2500,7 +2506,8 @@ function renderUl(){
       const c=gC(u.cistijernId);const isKor=u.dobav==='KOREKCIJA';
       const preostalo=isKor?null:u.litara-(potroseno[u.id]||0);
       const potroseniPct=isKor?0:Math.round(100*((potroseno[u.id]||0)/u.litara));
-      return`<tr><td class="mono">${(u.datum||'').replace('T',' ')}</td><td><span class="tag t-ok">${c?c.reg:'?'}</span></td><td>${isKor?`<span class="tag t-warn">⚖ ${u.nap||'korekcija'}</span>`:(u.dobav||'—')}</td><td><span class="tag t-l">${u.litara>0?'+':''}${u.litara}L</span></td><td class="admin-only" style="font-size:11px">${u.brFakture?u.brFakture:'—'}${u.cijenaLitra?` · ${u.cijenaLitra} KM/L <span style="color:var(--mut2)">(sa PDV: ${(u.cijenaLitra*1.17).toFixed(3)})</span>`:''}</td><td>${isKor?'—':`<span class="tag ${preostalo<=0?'t-warn':'t-ok'}">${preostalo.toFixed(0)}L (${100-potroseniPct}%)</span>`}</td><td style="white-space:nowrap">${isKor?'':`<button class="btn btn-s" style="padding:3px 8px;font-size:11px" onclick="prikaziPotrosnjuSerije('${u.id}')">👁</button> `}<button class="btn btn-s" style="padding:3px 8px;font-size:11px" onclick="editUl('${u.id}')">✎</button> <button class="btn btn-r" style="padding:3px 8px;font-size:11px" onclick="deleteUl('${u.id}')">✕</button></td></tr>`;
+      const iznosBezPdv = u.cijenaLitra ? u.litara*u.cijenaLitra : 0;
+      return`<tr><td class="mono">${(u.datum||'').replace('T',' ')}</td><td><span class="tag t-ok">${c?c.reg:'?'}</span></td><td>${isKor?`<span class="tag t-warn">⚖ ${u.nap||'korekcija'}</span>`:(u.dobav||'—')}</td><td><span class="tag t-l">${u.litara>0?'+':''}${u.litara}L</span></td><td class="admin-only" style="font-size:11px">${u.brFakture?u.brFakture:'—'}${u.cijenaLitra?`<br>${u.cijenaLitra} KM/L <span style="color:var(--mut2)">(sa PDV: ${(u.cijenaLitra*1.17).toFixed(3)})</span><br><b style="color:var(--acc)">${iznosBezPdv.toFixed(2)} KM</b> <span style="color:var(--mut2)">(sa PDV: ${(iznosBezPdv*1.17).toFixed(2)} KM)</span>`:''}</td><td>${isKor?'—':`<span class="tag ${preostalo<=0?'t-warn':'t-ok'}">${preostalo.toFixed(0)}L (${100-potroseniPct}%)</span>`}</td><td style="white-space:nowrap">${isKor?'':`<button class="btn btn-s" style="padding:3px 8px;font-size:11px" onclick="prikaziPotrosnjuSerije('${u.id}')">👁</button> `}<button class="btn btn-s" style="padding:3px 8px;font-size:11px" onclick="editUl('${u.id}')">✎</button> <button class="btn btn-r" style="padding:3px 8px;font-size:11px" onclick="deleteUl('${u.id}')">✕</button></td></tr>`;
     }).join('')+'</tbody></table></div>';
 }
 
