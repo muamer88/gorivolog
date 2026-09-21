@@ -4084,7 +4084,15 @@ function saveSig(){
 }
 
 // Click outside modal to close
-document.querySelectorAll('.modal').forEach(m=>{m.addEventListener('click',e=>{if(e.target===m&&m.id!=='printModal')closeModal(m.id);});});
+document.querySelectorAll('.modal').forEach(m=>{
+  let mousedownNaPozadini=false;
+  m.addEventListener('mousedown', e=>{ mousedownNaPozadini=(e.target===m); });
+  m.addEventListener('click', e=>{
+    // Zatvori SAMO ako je i mousedown i click bio tačno na pozadini (ne unutar sadržaja) -
+    // sprječava slučajno zatvaranje kad se selektuje tekst povlačenjem miša koje "iscuri" van granica.
+    if(e.target===m && mousedownNaPozadini && m.id!=='printModal') closeModal(m.id);
+  });
+});
 
 // ═══════════════════════════════════════════════
 // POSTAVKE
