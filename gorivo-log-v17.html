@@ -1603,7 +1603,7 @@ function populateAll(){
   ['otp-grad','fil-grad'].forEach(id=>{
     const el=document.getElementById(id);if(!el)return;
     const fv=el.options[0].outerHTML; el.innerHTML=fv;
-    S.gradilista.forEach(g=>{el.innerHTML+=`<option value="${g.id}">${g.naziv}</option>`;});
+    [...S.gradilista].sort((a,b)=>a.naziv.localeCompare(b.naziv)).forEach(g=>{el.innerHTML+=`<option value="${g.id}">${g.naziv}</option>`;});
   });
   ['nv-fir','vfil-fir'].forEach(id=>{
     const el=document.getElementById(id);if(!el)return;
@@ -2909,7 +2909,7 @@ function toggleSplitGradiliste(i){
 }
 function dodajSplitRed(i,gradId,postotak){
   const cont=document.querySelector(`#edit-split-${i} .split-redovi`);if(!cont)return;
-  const gradOpcije=S.gradilista.map(g=>`<option value="${g.id}" ${g.id===gradId?'selected':''}>${g.naziv}</option>`).join('');
+  const gradOpcije=[...S.gradilista].sort((a,b)=>a.naziv.localeCompare(b.naziv)).map(g=>`<option value="${g.id}" ${g.id===gradId?'selected':''}>${g.naziv}</option>`).join('');
   const div=document.createElement('div');
   div.style.cssText='display:flex;gap:6px;margin-bottom:5px;align-items:center';
   div.innerHTML=`<select data-split-grad style="flex:2"><option value="">— gradilište —</option>${gradOpcije}</select>
@@ -3204,7 +3204,7 @@ function populateIzvFiltere(){
   const gEl=document.getElementById('izv-fil-grad'), fEl=document.getElementById('izv-fil-firma'), vEl=document.getElementById('izv-fil-vozilo');
   if(!gEl)return;
   const curG=gEl.value,curF=fEl.value,curV=vEl.value;
-  gEl.innerHTML='<option value="">— sva —</option>'+S.gradilista.map(g=>`<option value="${g.id}">${g.naziv}</option>`).join('');
+  gEl.innerHTML='<option value="">— sva —</option>'+[...S.gradilista].sort((a,b)=>a.naziv.localeCompare(b.naziv)).map(g=>`<option value="${g.id}">${g.naziv}</option>`).join('');
   fEl.innerHTML='<option value="">— sve —</option>'+S.firme.map(f=>`<option value="${f.id}">${f.naziv}</option>`).join('');
   vEl.innerHTML='<option value="">— sva —</option>'+S.vozila.map(v=>`<option value="${v.id}">${v.reg}</option>`).join('');
   gEl.value=curG; fEl.value=curF; vEl.value=curV;
@@ -4177,7 +4177,7 @@ async function napraviBackup(){
     ...S.vozila.map(v=>[v.reg,v.tip,v.model||'',gF(v.firmaId)?.naziv||'',v.vozac||'',v.napomena||''])]);
   dodajList('Firme',[['Naziv','Adresa'],...S.firme.map(f=>[f.naziv,f.adr||''])]);
   dodajList('Cisterne',[['Registracija','Vozač'],...S.cistijerne.map(c=>[c.reg,c.vozac||''])]);
-  dodajList('Gradilista',[['Naziv','Lokacija'],...S.gradilista.map(g=>[g.naziv,g.lok||''])]);
+  dodajList('Gradilista',[['Naziv','Lokacija'],...[...S.gradilista].sort((a,b)=>a.naziv.localeCompare(b.naziv)).map(g=>[g.naziv,g.lok||''])]);
   const otpRows=[['Datum','Vrijeme','Broj','Cisterna','Gradiliste','Vozilo','Vozac','KM/MotoSati','Litara']];
   S.otpremnice.forEach(o=>{const c=gC(o.cistijernId),g=gG(o.gradId);o.stavke.forEach(s=>{const vi=stavkaVehInfo(s),isB=stavkaJeMotoSati(s);otpRows.push([o.datum,s.vrijeme||'',o.brojOtp,c?.reg||'',g?.naziv||'',vi.reg,s.vozacIme||'',formatMjerilo(s,isB),s.litara]);});});
   dodajList('Otpremnice',otpRows);
@@ -4360,7 +4360,7 @@ function listItem(el,name,sub,id,tp){return`<div class="li-row" id="li-${tp}-${i
 function renderLists(){
   document.getElementById('lst-c').innerHTML=S.cistijerne.map(c=>listItem(null,`<span style="font-family:monospace;color:var(--acc3)">${c.reg}</span>`,(c.vozac||'')+(c.kapacitet?' · kap. '+c.kapacitet+'L':''),c.id,'c')).join('')||'<div style="color:var(--mut2);font-size:12px;padding:8px">Nema cistijerni</div>';
   document.getElementById('lst-f').innerHTML=S.firme.map(f=>listItem(null,f.naziv,f.adr,f.id,'f')).join('')||'<div style="color:var(--mut2);font-size:12px;padding:8px">Nema firmi</div>';
-  document.getElementById('lst-g').innerHTML=S.gradilista.map(g=>listItem(null,g.naziv,g.lok?'📍 '+g.lok:'',g.id,'g')).join('')||'<div style="color:var(--mut2);font-size:12px;padding:8px">Nema gradilišta</div>';
+  document.getElementById('lst-g').innerHTML=[...S.gradilista].sort((a,b)=>a.naziv.localeCompare(b.naziv)).map(g=>listItem(null,g.naziv,g.lok?'📍 '+g.lok:'',g.id,'g')).join('')||'<div style="color:var(--mut2);font-size:12px;padding:8px">Nema gradilišta</div>';
   document.getElementById('lst-tl').innerHTML=S.treceLiceFirme.map(f=>listItem(null,f.naziv,'',f.id,'tl')).join('')||'<div style="color:var(--mut2);font-size:12px;padding:8px">Nema trećih lica</div>';
 }
 
