@@ -2539,6 +2539,7 @@ function prikaziPotrosnjuSerije(ulazId){
   document.getElementById('print-body').innerHTML=`<div style="padding:20px;color:#000;font-size:12px">
     <p><b>Cisterna:</b> ${c?c.reg:'?'} &nbsp; <b>Ukupno u seriji:</b> ${u.litara} L &nbsp; <b>Preostalo:</b> ${preostalo.toFixed(1)} L</p>
     <p><b>Broj fakture:</b> ${u.brFakture||'—'} &nbsp; <b>Cijena:</b> ${u.cijenaLitra?u.cijenaLitra+' KM/L':'—'} &nbsp; <b>Br. otpremnice dobavljača:</b> ${u.brDob||'—'}</p>
+    <p style="font-size:10px;color:#888;margin-top:4px">ℹ️ Litre u tabeli ispod su SAMO dio koji potiče baš iz ove fakture. Ako je vozilo tog dana sipalo i iz prethodne/naredne serije (cisterna nije bila prazna/puna tačno na granici), na otpremnici će pisati veći/drugačiji ukupan broj litara za to vozilo — to je ispravno, ne greška.</p>
     <div style="overflow-x:auto">
     <table style="width:100%;min-width:680px;border-collapse:collapse;margin-top:10px;font-size:10px" border="1" cellpadding="4">
       <thead><tr style="background:#eee"><th style="white-space:nowrap">Datum</th><th style="white-space:nowrap">Vrsta</th><th>Vozač</th><th style="white-space:nowrap">Vozilo</th><th>Gradilište</th><th>Firma</th><th style="white-space:nowrap">Litara</th><th>Put</th></tr></thead>
