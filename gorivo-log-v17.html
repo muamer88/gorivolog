@@ -715,6 +715,7 @@ try{
       <button class="btn btn-s" onclick="ulFilPeriod('mjesec')">Ovaj mjesec</button>
       <button class="btn btn-s" onclick="ulFilReset()">✕ Očisti</button>
     </div>
+    <div id="ul-sazetak" style="margin-bottom:10px"></div>
     <div id="lst-ul"><div class="empty">Nema unosa</div></div>
   </div>
 </div>
@@ -2540,7 +2541,13 @@ function renderUl(){
     if(q && !((u.brFakture||'').toLowerCase().includes(q) || (u.brDob||'').toLowerCase().includes(q) || (u.dobav||'').toLowerCase().includes(q))) return false;
     return true;
   });
-  if(!lista.length){el.innerHTML='<div class="empty">Nema rezultata za ovaj filter</div>';return;}
+  if(!lista.length){el.innerHTML='<div class="empty">Nema rezultata za ovaj filter</div>';document.getElementById('ul-sazetak').innerHTML='';return;}
+  // Sažetak - samo stvarne kupovine (ne korekcije), poštuje trenutni filter
+  const kupovine=lista.filter(u=>u.dobav!=='KOREKCIJA' && u.litara>0);
+  const ukLit=kupovine.reduce((a,u)=>a+u.litara,0);
+  const ukIznosBezPdv=kupovine.reduce((a,u)=>a+(u.cijenaLitra?u.litara*u.cijenaLitra:0),0);
+  const brezCijene=kupovine.filter(u=>!u.cijenaLitra).length;
+  document.getElementById('ul-sazetak').innerHTML=`<div class="signal sig-info">📊 Ukupno (za ovaj filter): <b>${ukLit.toLocaleString()} L</b> kupljeno · <b>${ukIznosBezPdv.toFixed(2)} KM</b> bez PDV (<b>${(ukIznosBezPdv*1.17).toFixed(2)} KM</b> sa PDV)${brezCijene?` · <span style="color:var(--acc2)">⚠ ${brezCijene} bez unesene cijene (nije uračunato)</span>`:''}</div>`;
   el.innerHTML='<div class="tw"><table><thead><tr><th>Datum</th><th>Cisterna</th><th>Dobavljač</th><th>Litara</th><th class="admin-only">Faktura</th><th>Preostalo</th><th></th></tr></thead><tbody>'+
     lista.map(u=>{
       const c=gC(u.cistijernId);const isKor=u.dobav==='KOREKCIJA';
