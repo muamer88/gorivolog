@@ -3067,10 +3067,13 @@ function regoviSeOdgovaraju(regA, regB){
   const na=normReg(regA), nb=normReg(regB);
   if(!na||!nb) return false;
   if(na===nb) return true;
+  // "Jezgro" = registracija bez TRAILING K-oznake (npr "T82-O-181 K102" -> "T82-O-181") - poklapanje SAMO
+  // ako oba jezgra postoje i identična su. NAMJERNO bez "includes" provjere - kratke garažne oznake
+  // (B5, B57, B58...) bi se lažno poklapale jedna sa drugom kao podstring.
   const jezgroA=na.replace(/\s+[A-Z]\d+(-\d+)?$/,'').trim();
   const jezgroB=nb.replace(/\s+[A-Z]\d+(-\d+)?$/,'').trim();
-  if(jezgroA && jezgroA===jezgroB) return true;
-  return na.includes(nb) || nb.includes(na);
+  if(jezgroA && jezgroB && jezgroA===jezgroB) return true;
+  return false;
 }
 function stavkaProladiFilter(s){
   const firmaFil=document.getElementById('izv-fil-firma')?.value||'';
