@@ -697,7 +697,9 @@ try{
       <div class="fg"><label>Vrsta goriva</label><select id="ul-gor"></select></div>
       <div class="fg"><label>Litara preuzeto</label><input type="number" id="ul-lit" min="0" step=".5" placeholder="5000"></div>
       <div class="fg admin-only"><label>Broj fakture</label><input id="ul-fakt" placeholder="FAKT-2026-xxx"></div>
-      <div class="fg admin-only"><label>Cijena po litru (KM)</label><input type="number" id="ul-cij" min="0" step=".001" placeholder="2.150"></div>
+      <div class="fg admin-only"><label>Cijena po litru BEZ PDV-a (KM)</label><input type="number" id="ul-cij" min="0" step=".001" placeholder="2.150" oninput="prikaziCijenuSaPdv()">
+        <div id="ul-cij-pdv" style="font-size:11px;color:var(--mut2);margin-top:3px"></div>
+      </div>
       <div class="fg" style="grid-column:1/5"><label>Napomena</label><input id="ul-nap" placeholder="Opcionalno..."></div>
     </div>
     <button class="btn btn-o" onclick="guardedClick(this,spremiUl)" id="ul-btn">✓ Sačuvaj ulaz</button>
@@ -2444,6 +2446,14 @@ async function spremiUl(){
     renderUl();populateAll();
   }catch(e){toast('⚠ Greška: '+e.message);}
 }
+const PDV_STOPA=0.17; // standardna stopa PDV-a u BiH (17%)
+function prikaziCijenuSaPdv(){
+  const el=document.getElementById('ul-cij-pdv');if(!el)return;
+  const bezPdv=parseFloat(document.getElementById('ul-cij').value);
+  if(isNaN(bezPdv)||bezPdv<=0){el.textContent='';return;}
+  const saPdv=bezPdv*(1+PDV_STOPA);
+  el.textContent=`Sa PDV-om (17%): ${saPdv.toFixed(3)} KM/L`;
+}
 function editUl(id){
   const u=S.ulazi.find(x=>x.id===id);if(!u)return;
   editingUlId=id;
@@ -2456,6 +2466,7 @@ function editUl(id){
   document.getElementById('ul-nap').value=u.nap||'';
   document.getElementById('ul-fakt').value=u.brFakture||'';
   document.getElementById('ul-cij').value=u.cijenaLitra||'';
+  prikaziCijenuSaPdv();
   document.getElementById('ul-btn').textContent='✓ Ažuriraj ulaz';
   window.scrollTo({top:0,behavior:'smooth'});
 }
@@ -2489,7 +2500,7 @@ function renderUl(){
       const c=gC(u.cistijernId);const isKor=u.dobav==='KOREKCIJA';
       const preostalo=isKor?null:u.litara-(potroseno[u.id]||0);
       const potroseniPct=isKor?0:Math.round(100*((potroseno[u.id]||0)/u.litara));
-      return`<tr><td class="mono">${(u.datum||'').replace('T',' ')}</td><td><span class="tag t-ok">${c?c.reg:'?'}</span></td><td>${isKor?`<span class="tag t-warn">⚖ ${u.nap||'korekcija'}</span>`:(u.dobav||'—')}</td><td><span class="tag t-l">${u.litara>0?'+':''}${u.litara}L</span></td><td class="admin-only" style="font-size:11px">${u.brFakture?u.brFakture:'—'}${u.cijenaLitra?' · '+u.cijenaLitra+' KM/L':''}</td><td>${isKor?'—':`<span class="tag ${preostalo<=0?'t-warn':'t-ok'}">${preostalo.toFixed(0)}L (${100-potroseniPct}%)</span>`}</td><td style="white-space:nowrap">${isKor?'':`<button class="btn btn-s" style="padding:3px 8px;font-size:11px" onclick="prikaziPotrosnjuSerije('${u.id}')">👁</button> `}<button class="btn btn-s" style="padding:3px 8px;font-size:11px" onclick="editUl('${u.id}')">✎</button> <button class="btn btn-r" style="padding:3px 8px;font-size:11px" onclick="deleteUl('${u.id}')">✕</button></td></tr>`;
+      return`<tr><td class="mono">${(u.datum||'').replace('T',' ')}</td><td><span class="tag t-ok">${c?c.reg:'?'}</span></td><td>${isKor?`<span class="tag t-warn">⚖ ${u.nap||'korekcija'}</span>`:(u.dobav||'—')}</td><td><span class="tag t-l">${u.litara>0?'+':''}${u.litara}L</span></td><td class="admin-only" style="font-size:11px">${u.brFakture?u.brFakture:'—'}${u.cijenaLitra?` · ${u.cijenaLitra} KM/L <span style="color:var(--mut2)">(sa PDV: ${(u.cijenaLitra*1.17).toFixed(3)})</span>`:''}</td><td>${isKor?'—':`<span class="tag ${preostalo<=0?'t-warn':'t-ok'}">${preostalo.toFixed(0)}L (${100-potroseniPct}%)</span>`}</td><td style="white-space:nowrap">${isKor?'':`<button class="btn btn-s" style="padding:3px 8px;font-size:11px" onclick="prikaziPotrosnjuSerije('${u.id}')">👁</button> `}<button class="btn btn-s" style="padding:3px 8px;font-size:11px" onclick="editUl('${u.id}')">✎</button> <button class="btn btn-r" style="padding:3px 8px;font-size:11px" onclick="deleteUl('${u.id}')">✕</button></td></tr>`;
     }).join('')+'</tbody></table></div>';
 }
 
