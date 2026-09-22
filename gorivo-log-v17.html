@@ -787,6 +787,8 @@ try{
       <button class="btn btn-xl" onclick="exportIzvjestajExcel()">⬇ Excel — sirovi podaci</button>
       <button class="btn btn-xl" onclick="exportPivotExcel()">⬇ Excel — pivot po vozilu</button>
       <button class="btn btn-xl admin-only" onclick="bulkPrintOtpremnice()">🖨 Štampaj sve otpremnice (filtrirano)</button>
+      <button class="btn btn-xl admin-only" onclick="bulkPrintPoVozilu('otpremnice')">🖨 Otpremnica po vozilu (LKW/BOSSIL)</button>
+      <button class="btn btn-xl admin-only" onclick="bulkPrintPoVozilu('otpremnice3')">🖨 Otpremnica po vozilu (Treća lica)</button>
     </div>
   </div>
   <div class="stats" id="stats-g"></div>
@@ -4076,6 +4078,87 @@ function bulkPrintOtpremnice(){
   document.getElementById('print-body').innerHTML=
     `<div style="padding:10px 20px;color:#000;font-size:12px">📋 Skupni ispis: <b>${list.length}</b> otpremnica, ukupno <b>${ukupnoL.toLocaleString()} L</b>${od||do_?` (period: ${od||'početak'} — ${do_||'danas'})`:''}</div>`+
     list.map(o=>otpToHtml(o)+'<div style="page-break-after:always"></div>').join('');
+  openModal('printModal');
+}
+
+// ═══ ŠTAMPA "PO VOZILU" (za računovodstvo - prolaze vozilo po vozilo, sa svim potpisima) ═══
+function bulkPrintPoVozilu(tip){
+  const od=document.getElementById('izv-od').value, do_=document.getElementById('izv-do').value;
+  const gradFil=document.getElementById('izv-fil-grad')?.value||'';
+  const firmaFil=document.getElementById('izv-fil-firma')?.value||'';
+  const jeGlavno = tip==='otpremnice';
+
+  let lista=(jeGlavno?S.otpremnice:S.otpremnice3).filter(o=>{
+    if(o.stornirano) return false;
+    const d=(o.datum||'').split('T')[0];
+    if(od && d<od) return false;
+    if(do_ && d>do_) return false;
+    if(jeGlavno && gradFil && o.gradId!==gradFil) return false;
+    return true;
+  });
+  if(!lista.length){toast('⚠ Nema otpremnica za odabrane filtere.');return;}
+
+  const poVozilu={}; // reg -> {model, firmaNaziv, stavke:[...]}
+  lista.forEach(o=>{
+    const g=jeGlavno?gG(o.gradId):null;
+    o.stavke.forEach(s=>{
+      let reg,model,firmaNaziv;
+      if(jeGlavno){
+        const vi=stavkaVehInfo(s);
+        if(firmaFil && vi.firmaId!==firmaFil) return;
+        reg=vi.reg; model=vi.model;
+        const f=gF(vi.firmaId); firmaNaziv=f?f.naziv:'';
+      }else{
+        reg=s.reg||'?'; model=''; firmaNaziv='';
+      }
+      if(!poVozilu[reg]) poVozilu[reg]={model,firmaNaziv,stavke:[]};
+      poVozilu[reg].stavke.push({datum:o.datum,gradiliste:g?g.naziv:'',litara:s.litara,sig:s.sig,vozac:s.vozacIme||s.vozac||'',papirniUnos:s.papirniUnos});
+    });
+  });
+  const regovi=Object.keys(poVozilu).sort((a,b)=>a.localeCompare(b));
+  if(!regovi.length){toast('⚠ Nema stavki za odabrane filtere.');return;}
+
+  const mf=S.mojaFirma;
+  const naslov=jeGlavno?'Otpremnica po vozilu':'Otpremnica po vozilu — Treća lica';
+  let ukupnoSvih=0;
+  const sekcije=regovi.map(reg=>{
+    const v=poVozilu[reg];
+    v.stavke.sort((a,b)=>(a.datum||'').localeCompare(b.datum||''));
+    const ukLit=v.stavke.reduce((a,s)=>a+s.litara,0);
+    ukupnoSvih+=ukLit;
+    const rows=v.stavke.map((s,i)=>`<tr>
+      <td>${i+1}</td>
+      <td class="mono">${(s.datum||'').split('T')[0]}</td>
+      <td>${s.gradiliste||'—'}</td>
+      <td>${s.vozac||'—'}</td>
+      <td style="text-align:right;font-family:monospace;font-weight:700">${s.litara}</td>
+      <td style="text-align:center">${s.sig?`<img src="${s.sig}" style="height:34px;width:auto;background:#fff">`:(s.papirniUnos?'<span style="font-size:9px;color:#666">📄 na papiru</span>':'<span style="font-size:9px;color:#ccc">—</span>')}</td>
+    </tr>`).join('');
+    return `<div style="padding:18px;border:1px solid #ccc;border-radius:6px;margin-bottom:14px;color:#000;font-family:Arial,sans-serif">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #000;padding-bottom:10px;margin-bottom:10px">
+        <div><img src="logo.png" style="height:28px;width:auto;display:block;margin-bottom:4px" onerror="this.style.display='none'"><strong style="font-size:13px">${mf.naziv||'[Vaša firma]'}</strong></div>
+        <div style="text-align:right"><div style="font-size:16px;font-weight:900;letter-spacing:1px">${naslov.toUpperCase()}</div></div>
+      </div>
+      <div style="display:flex;gap:24px;flex-wrap:wrap;margin-bottom:12px;font-size:12px">
+        <div><div style="color:#888;font-size:9px;text-transform:uppercase">Vozilo</div><div style="font-weight:700;font-size:14px">${reg}</div><div style="color:#555">${v.model||''}</div></div>
+        ${v.firmaNaziv?`<div><div style="color:#888;font-size:9px;text-transform:uppercase">Firma</div><div style="font-weight:700">${v.firmaNaziv}</div></div>`:''}
+        <div><div style="color:#888;font-size:9px;text-transform:uppercase">Period</div><div style="font-weight:700">${od||'—'} do ${do_||'—'}</div></div>
+        <div><div style="color:#888;font-size:9px;text-transform:uppercase">Ukupno</div><div style="font-weight:700;color:#1F6B1E">${ukLit} L</div><div style="color:#555;font-size:10px">${v.stavke.length} sipanja</div></div>
+      </div>
+      <table style="width:100%;border-collapse:collapse;font-size:11px" border="1" cellpadding="5">
+        <thead><tr style="background:#333;color:#fff"><th>R.br.</th><th>Datum</th><th>Gradilište</th><th>Vozač</th><th>Litara</th><th>Potpis</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div><div style="page-break-after:always"></div>`;
+  }).join('');
+
+  document.getElementById('print-receipt-btn').style.display='none';
+  document.getElementById('print-poreklo-btn').style.display='none';
+  document.getElementById('print-export-btn').style.display='none';
+  document.getElementById('print-title').textContent=`${naslov} — ${regovi.length} vozila, ${ukupnoSvih.toLocaleString()} L`;
+  document.getElementById('print-body').innerHTML=
+    `<div style="padding:10px 20px;color:#000;font-size:12px">📋 ${naslov}: <b>${regovi.length}</b> vozila, ukupno <b>${ukupnoSvih.toLocaleString()} L</b>${od||do_?` (period: ${od||'početak'} — ${do_||'danas'})`:''}</div>`+
+    sekcije;
   openModal('printModal');
 }
 
