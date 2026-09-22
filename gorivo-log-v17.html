@@ -2450,8 +2450,32 @@ function renderTr(){
   el.innerHTML='<div class="tw"><table><thead><tr><th>Datum</th><th>Daje</th><th>Prima</th><th>Litara</th><th>Lokacija</th><th></th></tr></thead><tbody>'+
     [...S.transferi].reverse().map(t=>{
       const cd=gC(t.cistijernDajeId),cp=gC(t.cistijernPrimaId);
-      return`<tr><td class="mono">${(t.datum||'').replace('T',' ')}</td><td><span class="tag t-warn">${cd?cd.reg:'?'}</span></td><td><span class="tag t-ok">${cp?cp.reg:'?'}</span></td><td><span class="tag t-l">${t.litara}L</span></td><td style="font-size:12px;color:var(--mut2)">${t.lokacija||'—'}</td><td><button class="btn btn-pr" style="padding:5px 9px;font-size:11px" onclick="printTransfer('${t.id}')">🖨</button></td></tr>`;
+      return`<tr id="tr-row-${t.id}"><td class="mono">${(t.datum||'').replace('T',' ')}</td><td><span class="tag t-warn">${cd?cd.reg:'?'}</span></td><td><span class="tag t-ok">${cp?cp.reg:'?'}</span></td><td><span class="tag t-l">${t.litara}L</span></td><td style="font-size:12px;color:var(--mut2)">${t.lokacija||'—'}</td><td style="white-space:nowrap"><button class="btn btn-pr" style="padding:5px 9px;font-size:11px" onclick="printTransfer('${t.id}')">🖨</button> <button class="btn btn-s" style="padding:5px 9px;font-size:11px" onclick="urediTransfer('${t.id}')">✏️</button></td></tr>`;
     }).join('')+'</tbody></table></div>';
+}
+function urediTransfer(id){
+  const t=S.transferi.find(x=>x.id===id);if(!t)return;
+  const row=document.getElementById('tr-row-'+id);if(!row)return;
+  row.innerHTML=`<td colspan="6" style="padding:10px">
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">
+      <div class="fg" style="flex:1;min-width:120px"><label style="font-size:10px">Litara</label><input type="number" step=".5" id="tre-lit-${id}" value="${t.litara}"></div>
+      <div class="fg" style="flex:2;min-width:150px"><label style="font-size:10px">Lokacija</label><input id="tre-lok-${id}" value="${t.lokacija||''}"></div>
+      <button class="btn btn-p" style="padding:6px 14px;font-size:12px" onclick="sacuvajTransfer('${id}')">✓ Sačuvaj</button>
+      <button class="btn btn-s" style="padding:6px 14px;font-size:12px" onclick="renderTr()">✕ Otkaži</button>
+    </div>
+    <div style="font-size:10px;color:var(--mut2);margin-top:5px">Napomena: izmjena litara NE mijenja koja je faktura izvor (ostaje kako je bilo pri prvom unosu).</div>
+  </td>`;
+}
+async function sacuvajTransfer(id){
+  const t=S.transferi.find(x=>x.id===id);if(!t)return;
+  const noviLit=parseFloat(document.getElementById('tre-lit-'+id).value);
+  const novaLok=document.getElementById('tre-lok-'+id).value.trim();
+  if(isNaN(noviLit)||noviLit<=0){toast('⚠ Unesi ispravan broj litara.');return;}
+  try{
+    await window.FB.setDoc(window.FB.docRef('transferi',id),{litara:noviLit,lokacija:novaLok},{merge:true});
+    logAkcija('Uređen transfer', `${gC(t.cistijernDajeId)?.reg||'?'} → ${gC(t.cistijernPrimaId)?.reg||'?'}: ${t.litara}L → ${noviLit}L`);
+    toast('✓ Sačuvano!');
+  }catch(e){toast('⚠ Greška: '+e.message);}
 }
 
 // ═══ ULAZ ═══
