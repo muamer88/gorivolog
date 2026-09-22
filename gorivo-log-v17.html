@@ -788,8 +788,11 @@ try{
       <button class="btn btn-xl" onclick="exportIzvjestajExcel()">⬇ Excel — sirovi podaci</button>
       <button class="btn btn-xl" onclick="exportPivotExcel()">⬇ Excel — pivot po vozilu</button>
       <button class="btn btn-xl admin-only" onclick="bulkPrintOtpremnice()">🖨 Štampaj sve otpremnice (filtrirano)</button>
-      <button class="btn btn-xl admin-only" onclick="bulkPrintPoVozilu('otpremnice')">🖨 Otpremnica po vozilu (LKW/BOSSIL)</button>
-      <button class="btn btn-xl admin-only" onclick="bulkPrintPoVozilu('otpremnice3')">🖨 Otpremnica po vozilu (Treća lica)</button>
+      <button class="btn btn-xl admin-only" onclick="otvoriOdaberiVozila('otpremnice')">🖨 Otpremnica po vozilu (LKW/BOSSIL)</button>
+      <button class="btn btn-xl admin-only" onclick="otvoriOdaberiVozila('otpremnice3')">🖨 Otpremnica po vozilu (Treća lica)</button>
+      <label class="admin-only" style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--mut2);margin-top:8px">
+        <input type="checkbox" id="izv-nova-strana"> Nova strana za svako vozilo/otpremnicu (inače se štedi papir — sadržaj se nastavlja na istoj strani)
+      </label>
     </div>
   </div>
   <div class="stats" id="stats-g"></div>
@@ -1169,6 +1172,22 @@ try{
 </div>
 
 <!-- ═══ PRINT MODAL ═══ -->
+<div class="modal" id="odaberiVozilaModal">
+  <div class="modal-box">
+    <div class="modal-head"><h3>🚛 Odaberi vozila za ispis</h3><button class="btn btn-r" onclick="closeModal('odaberiVozilaModal')">✕</button></div>
+    <div class="modal-body">
+      <div class="btn-row" style="margin-bottom:10px">
+        <button class="btn btn-s" onclick="ovOznaciSve(true)">☑ Sve</button>
+        <button class="btn btn-s" onclick="ovOznaciSve(false)">☐ Nijedno</button>
+      </div>
+      <div id="ov-lista" style="max-height:50vh;overflow-y:auto"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-p" onclick="generisiPoVozilu()">🖨 Generiši za označena</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal" id="printModal">
   <div class="modal-box" style="width:min(800px,98vw);max-height:97vh">
     <div class="ptbar">
@@ -4072,13 +4091,14 @@ function bulkPrintOtpremnice(){
   if(!list.length){toast('⚠ Nema otpremnica za odabrane filtere.');return;}
   list.sort((a,b)=>(a.datum||'').localeCompare(b.datum||'')||vrijemeKreiranjaOtp(a.brojOtp).localeCompare(vrijemeKreiranjaOtp(b.brojOtp)));
   const ukupnoL=list.reduce((a,o)=>a+o.stavke.reduce((b,s)=>b+s.litara,0),0);
+  const novaStranaSvako=document.getElementById('izv-nova-strana')?.checked||false;
   document.getElementById('print-receipt-btn').style.display='none';
   document.getElementById('print-poreklo-btn').style.display='none';
   document.getElementById('print-export-btn').style.display='none';
   document.getElementById('print-title').textContent=`${list.length} otpremnica — ukupno ${ukupnoL.toLocaleString()} L`;
   document.getElementById('print-body').innerHTML=
     `<div style="padding:10px 20px;color:#000;font-size:12px">📋 Skupni ispis: <b>${list.length}</b> otpremnica, ukupno <b>${ukupnoL.toLocaleString()} L</b>${od||do_?` (period: ${od||'početak'} — ${do_||'danas'})`:''}</div>`+
-    list.map(o=>otpToHtml(o)).join('');
+    list.map((o,idx)=>(novaStranaSvako&&idx>0?'<div style="page-break-before:always"></div>':'')+otpToHtml(o)).join('');
   openModal('printModal');
 }
 
@@ -4093,12 +4113,12 @@ function napraviMapuBojaFirmi(nazivi){
   jedinstveni.forEach((n,i)=>{ mapa[n]=PALETA_FIRMI[i%PALETA_FIRMI.length]; });
   return mapa;
 }
-function bulkPrintPoVozilu(tip){
+// Grupiše otpremnice po vozilu za dati tip i trenutne filtere - koristi ga i modal za odabir i sam ispis
+function izracunajPoVozilu(tip){
   const od=document.getElementById('izv-od').value, do_=document.getElementById('izv-do').value;
   const gradFil=document.getElementById('izv-fil-grad')?.value||'';
   const firmaFil=document.getElementById('izv-fil-firma')?.value||'';
   const jeGlavno = tip==='otpremnice';
-
   let lista=(jeGlavno?S.otpremnice:S.otpremnice3).filter(o=>{
     if(o.stornirano) return false;
     const d=(o.datum||'').split('T')[0];
@@ -4107,9 +4127,7 @@ function bulkPrintPoVozilu(tip){
     if(jeGlavno && gradFil && o.gradId!==gradFil) return false;
     return true;
   });
-  if(!lista.length){toast('⚠ Nema otpremnica za odabrane filtere.');return;}
-
-  const poVozilu={}; // reg -> {model, firmaNaziv, stavke:[...]}
+  const poVozilu={};
   lista.forEach(o=>{
     const g=jeGlavno?gG(o.gradId):null;
     o.stavke.forEach(s=>{
@@ -4131,13 +4149,45 @@ function bulkPrintPoVozilu(tip){
     if(fa!==fb) return fa.localeCompare(fb);
     return a.localeCompare(b);
   });
+  return {poVozilu, regovi, od, do_};
+}
+
+window._ovTip=null;
+function otvoriOdaberiVozila(tip){
+  const {poVozilu, regovi}=izracunajPoVozilu(tip);
+  if(!regovi.length){toast('⚠ Nema stavki za odabrane filtere.');return;}
+  window._ovTip=tip;
+  const el=document.getElementById('ov-lista');
+  el.innerHTML=regovi.map(reg=>{
+    const v=poVozilu[reg];
+    const ukLit=v.stavke.reduce((a,s)=>a+s.litara,0);
+    return `<label style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--bord);font-size:13px">
+      <input type="checkbox" class="ov-chk" value="${reg.replace(/"/g,'&quot;')}" checked>
+      <span><b>${reg}</b> ${v.model?'— '+v.model:''} ${v.firmaNaziv?`<span class="tag t-f" style="font-size:10px">${v.firmaNaziv}</span>`:''} <span style="color:var(--mut2)">(${ukLit}L, ${v.stavke.length} sipanja)</span></span>
+    </label>`;
+  }).join('');
+  openModal('odaberiVozilaModal');
+}
+function ovOznaciSve(val){ document.querySelectorAll('.ov-chk').forEach(c=>c.checked=val); }
+function generisiPoVozilu(){
+  const odabrani=[...document.querySelectorAll('.ov-chk:checked')].map(c=>c.value);
+  if(!odabrani.length){toast('⚠ Označi bar jedno vozilo.');return;}
+  closeModal('odaberiVozilaModal');
+  bulkPrintPoVozilu(window._ovTip, odabrani);
+}
+
+function bulkPrintPoVozilu(tip, odabraniRegovi){
+  const novaStranaSvako=document.getElementById('izv-nova-strana')?.checked||false;
+  const {poVozilu, regovi:sviRegovi, od, do_}=izracunajPoVozilu(tip);
+  const regovi = odabraniRegovi ? sviRegovi.filter(r=>odabraniRegovi.includes(r)) : sviRegovi;
   if(!regovi.length){toast('⚠ Nema stavki za odabrane filtere.');return;}
 
   const mapaBojaFirmi=napraviMapuBojaFirmi(regovi.map(r=>poVozilu[r].firmaNaziv));
   const mf=S.mojaFirma;
-  const naslov=jeGlavno?'Otpremnica po vozilu':'Otpremnica po vozilu — Treća lica';
+  const naslov=tip==='otpremnice'?'Otpremnica po vozilu':'Otpremnica po vozilu — Treća lica';
   let ukupnoSvih=0;
-  const sekcije=regovi.map(reg=>{
+  let prethodnaFirma=null;
+  const sekcije=regovi.map((reg,idx)=>{
     const v=poVozilu[reg];
     v.stavke.sort((a,b)=>(a.datum||'').localeCompare(b.datum||''));
     const ukLit=v.stavke.reduce((a,s)=>a+s.litara,0);
@@ -4151,7 +4201,11 @@ function bulkPrintPoVozilu(tip){
       <td style="text-align:center">${s.sig?`<img src="${s.sig}" style="height:34px;width:auto;background:#fff">`:(s.papirniUnos?'<span style="font-size:9px;color:#666">📄 na papiru</span>':'<span style="font-size:9px;color:#ccc">—</span>')}</td>
     </tr>`).join('');
     const boja=v.firmaNaziv?(mapaBojaFirmi[v.firmaNaziv]||'#ccc'):'#ccc';
-    return `<div style="position:relative;padding:14px;border:1px solid #ccc;border-radius:6px;margin-bottom:12px;color:#000;font-family:Arial,sans-serif;overflow:hidden;page-break-inside:avoid">
+    // Prekid strane: uvijek kad se promijeni firma (da se firme nikad ne miješaju na istoj strani, čak ni u kompaktnom modu),
+    // ili uvijek (ako je korisnik uključio "Nova strana za svako vozilo")
+    const prekidPrije = idx>0 && (novaStranaSvako || v.firmaNaziv!==prethodnaFirma);
+    prethodnaFirma=v.firmaNaziv;
+    return `<div style="position:relative;padding:14px;border:1px solid #ccc;border-radius:6px;margin-bottom:12px;color:#000;font-family:Arial,sans-serif;overflow:hidden;page-break-inside:avoid;${prekidPrije?'page-break-before:always':''}">
       ${v.firmaNaziv?`<div style="position:absolute;top:0;right:0;width:0;height:0;border-style:solid;border-width:0 36px 36px 0;border-color:transparent ${boja} transparent transparent;print-color-adjust:exact;-webkit-print-color-adjust:exact"></div>`:''}
       <div style="display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #000;padding-bottom:8px;margin-bottom:8px">
         <div><img src="logo.png" style="height:24px;width:auto;display:block;margin-bottom:3px" onerror="this.style.display='none'"><strong style="font-size:12px">${mf.naziv||'[Vaša firma]'}</strong></div>
