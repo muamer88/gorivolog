@@ -4082,6 +4082,16 @@ function bulkPrintOtpremnice(){
 }
 
 // ═══ ŠTAMPA "PO VOZILU" (za računovodstvo - prolaze vozilo po vozilo, sa svim potpisima) ═══
+// Dosljedna boja po firmi (ista firma UVIJEK dobija istu boju u okviru jednog ispisa - dodjeljuje se
+// po abecednom redoslijedu firmi koje se STVARNO pojavljuju, garantovano različite boje, ne hash koji
+// može slučajno dati istu boju dvjema firmama).
+const PALETA_FIRMI=['#FFEB3B','#EF5350','#4FC3F7','#81C784','#BA68C8','#FFB74D','#F06292','#A1887F','#90A4AE'];
+function napraviMapuBojaFirmi(nazivi){
+  const jedinstveni=[...new Set(nazivi.filter(Boolean))].sort((a,b)=>a.localeCompare(b));
+  const mapa={};
+  jedinstveni.forEach((n,i)=>{ mapa[n]=PALETA_FIRMI[i%PALETA_FIRMI.length]; });
+  return mapa;
+}
 function bulkPrintPoVozilu(tip){
   const od=document.getElementById('izv-od').value, do_=document.getElementById('izv-do').value;
   const gradFil=document.getElementById('izv-fil-grad')?.value||'';
@@ -4122,6 +4132,7 @@ function bulkPrintPoVozilu(tip){
   });
   if(!regovi.length){toast('⚠ Nema stavki za odabrane filtere.');return;}
 
+  const mapaBojaFirmi=napraviMapuBojaFirmi(regovi.map(r=>poVozilu[r].firmaNaziv));
   const mf=S.mojaFirma;
   const naslov=jeGlavno?'Otpremnica po vozilu':'Otpremnica po vozilu — Treća lica';
   let ukupnoSvih=0;
@@ -4138,14 +4149,16 @@ function bulkPrintPoVozilu(tip){
       <td style="text-align:right;font-family:monospace;font-weight:700">${s.litara}</td>
       <td style="text-align:center">${s.sig?`<img src="${s.sig}" style="height:34px;width:auto;background:#fff">`:(s.papirniUnos?'<span style="font-size:9px;color:#666">📄 na papiru</span>':'<span style="font-size:9px;color:#ccc">—</span>')}</td>
     </tr>`).join('');
-    return `<div style="padding:18px;border:1px solid #ccc;border-radius:6px;margin-bottom:14px;color:#000;font-family:Arial,sans-serif">
+    const boja=v.firmaNaziv?(mapaBojaFirmi[v.firmaNaziv]||'#ccc'):'#ccc';
+    return `<div style="position:relative;padding:18px;border:1px solid #ccc;border-radius:6px;margin-bottom:14px;color:#000;font-family:Arial,sans-serif;overflow:hidden">
+      ${v.firmaNaziv?`<div style="position:absolute;top:0;right:0;width:0;height:0;border-style:solid;border-width:0 70px 70px 0;border-color:transparent ${boja} transparent transparent"></div>`:''}
       <div style="display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #000;padding-bottom:10px;margin-bottom:10px">
         <div><img src="logo.png" style="height:28px;width:auto;display:block;margin-bottom:4px" onerror="this.style.display='none'"><strong style="font-size:13px">${mf.naziv||'[Vaša firma]'}</strong></div>
         <div style="text-align:right"><div style="font-size:16px;font-weight:900;letter-spacing:1px">${naslov.toUpperCase()}</div></div>
       </div>
       <div style="display:flex;gap:24px;flex-wrap:wrap;margin-bottom:12px;font-size:12px">
         <div><div style="color:#888;font-size:9px;text-transform:uppercase">Vozilo</div><div style="font-weight:700;font-size:14px">${reg}</div><div style="color:#555">${v.model||''}</div></div>
-        ${v.firmaNaziv?`<div><div style="color:#888;font-size:9px;text-transform:uppercase">Firma</div><div style="display:inline-block;background:#FFEB3B;color:#000;font-weight:900;padding:2px 10px;border-radius:4px;font-size:14px">${v.firmaNaziv}</div></div>`:''}
+        ${v.firmaNaziv?`<div><div style="color:#888;font-size:9px;text-transform:uppercase">Firma</div><div style="display:inline-block;background:${boja};color:#000;font-weight:900;padding:2px 10px;border-radius:4px;font-size:14px">${v.firmaNaziv}</div></div>`:''}
         <div><div style="color:#888;font-size:9px;text-transform:uppercase">Period</div><div style="font-weight:700">${od||'—'} do ${do_||'—'}</div></div>
         <div><div style="color:#888;font-size:9px;text-transform:uppercase">Ukupno</div><div style="font-weight:700;color:#1F6B1E">${ukLit} L</div><div style="color:#555;font-size:10px">${v.stavke.length} sipanja</div></div>
       </div>
