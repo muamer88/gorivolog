@@ -2425,7 +2425,9 @@ async function spremiTr(){
   if(!daje||!prima||!lit){toast('⚠ Popuni sva polja!');return;}
   if(daje===prima){toast('⚠ Ista cisterna!');return;}
   const dost=raspolozivoLitara(daje);
-  if(lit>dost){toast(`⚠ Cisterna koja daje nema dovoljno goriva! Raspoloživo: ${dost.toFixed(1)} L, traženo: ${lit} L`,4000);return;}
+  const TOLERANCIJA_TRANSFER=10; // dozvoljen mali višak (normalno odstupanje mjerenja na terenu) bez blokiranja
+  if(lit>dost+TOLERANCIJA_TRANSFER){toast(`⚠ Cisterna koja daje nema dovoljno goriva! Raspoloživo: ${dost.toFixed(1)} L, traženo: ${lit} L`,4000);return;}
+  const visakPreostalog = lit>dost ? (lit-dost) : 0;
   const cPrima=gC(prima);
   if(cPrima&&cPrima.kapacitet){
     const nakon=cisternaStanje(prima)+lit;
@@ -2438,6 +2440,10 @@ async function spremiTr(){
   try{
     const ref=await window.FB.addDoc(window.FB.col('transferi'),podaci);
     if(!S.transferi.find(x=>x.id===ref.id)) S.transferi.push({id:ref.id,...podaci});
+    if(visakPreostalog>0){
+      const cDaje=gC(daje);
+      logAkcija('Transfer sa viškom (tolerancija)', `${cDaje?cDaje.reg:'?'}: traženo ${lit}L, raspoloživo bilo ${dost.toFixed(1)}L (višak ${visakPreostalog.toFixed(1)}L, unutar dozvoljene tolerancije od ${TOLERANCIJA_TRANSFER}L)`);
+    }
     sigs.tr1=sigs.tr2=null;
     document.getElementById('tr-lit').value='';document.getElementById('tr-lok').value='';
     ['tr-s1-p','tr-s2-p'].forEach(id=>{document.getElementById(id).innerHTML='<span style="color:var(--mut2);font-size:12px">👆 Potpis</span>';});
