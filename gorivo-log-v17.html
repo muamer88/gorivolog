@@ -1808,7 +1808,9 @@ async function addStavka(){
   const lit=parseFloat(document.getElementById('e-lit').value);
   if(!lit||lit<=0){toast('⚠ Unesite litre!');return;}
   const dost=raspolozivoLitara(curOtp.cistijernId);
-  if(lit>dost){toast(`⚠ Nema dovoljno goriva u cisterni! Raspoloživo: ${dost.toFixed(1)} L, traženo: ${lit} L`,4000);return;}
+  const TOLERANCIJA_TOCENJE=10;
+  if(lit>dost+TOLERANCIJA_TOCENJE){toast(`⚠ Nema dovoljno goriva u cisterni! Raspoloživo: ${dost.toFixed(1)} L, traženo: ${lit} L`,4000);return;}
+  if(lit>dost){logAkcija('Sipanje sa viškom (tolerancija)', `${gC(curOtp.cistijernId)?.reg||'?'}: traženo ${lit}L, raspoloživo bilo ${dost.toFixed(1)}L (unutar tolerancije ${TOLERANCIJA_TOCENJE}L)`);}
   const isB=koristiMotoSate(v);
   const val=parseFloat(document.getElementById('e-mjerilo').value);
   if(isNaN(val)){toast(`⚠ Unesite ${isB?'moto sate':'kilometražu'}!`);return;}
@@ -2161,7 +2163,9 @@ function addStavka3(){
   if(!reg){toast('⚠ Unesi registraciju vozila!');return;}
   if(!lit||lit<=0){toast('⚠ Unesite litre!');return;}
   const dost=raspolozivoLitara(curOtp3.cistijernId);
-  if(lit>dost){toast(`⚠ Nema dovoljno goriva u cisterni! Raspoloživo: ${dost.toFixed(1)} L, traženo: ${lit} L`,4000);return;}
+  const TOLERANCIJA_TOCENJE3=10;
+  if(lit>dost+TOLERANCIJA_TOCENJE3){toast(`⚠ Nema dovoljno goriva u cisterni! Raspoloživo: ${dost.toFixed(1)} L, traženo: ${lit} L`,4000);return;}
+  if(lit>dost){logAkcija('Sipanje sa viškom (tolerancija, treća lica)', `${gC(curOtp3.cistijernId)?.reg||'?'}: traženo ${lit}L, raspoloživo bilo ${dost.toFixed(1)}L (unutar tolerancije ${TOLERANCIJA_TOCENJE3}L)`);}
   if(!sigs.treca){toast('⚠ Potpis je obavezan — dodirni polje za potpis prije dodavanja na listu!',4000);return;}
   curOtp3.stavke.push({id:'s'+uid(),reg,vozac,napomena:nap,litara:lit,sig:sigs.treca||null,vrijeme:new Date().toTimeString().slice(0,5),izvorUlaza:fifoAlociraj(curOtp3.cistijernId,lit)});
   // Zapamti kombinaciju za sljedeći put (autocomplete), bez dupliranja
