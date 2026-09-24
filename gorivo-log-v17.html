@@ -517,6 +517,18 @@ try{
 
 <!-- ═══ TAB: TOČENJE ═══ -->
 <div class="tab" id="tab-tocenje">
+  <div class="card" id="brojac-card">
+    <div class="card-title">🔢 Brojač pumpe cisterne</div>
+    <div class="signal sig-tip" style="margin-bottom:10px">Ujutru upiši stanje brojača prije prvog točenja, uveče poslije zadnjeg. Sistem sam provjeri da li se slaže sa unesenim otpremnicama.</div>
+    <div class="grid4">
+      <div class="fg"><label>Cisterna</label><select id="br-cist" onchange="ucitajBrojac(true)"></select></div>
+      <div class="fg"><label>Datum</label><input type="date" id="br-dat" onchange="ucitajBrojac(true)"></div>
+      <div class="fg"><label>Brojač — početak dana (L)</label><input type="number" step=".1" id="br-poc" oninput="osvjeziBrojacInfo()"></div>
+      <div class="fg"><label>Brojač — kraj dana (L)</label><input type="number" step=".1" id="br-kraj" oninput="osvjeziBrojacInfo()"></div>
+    </div>
+    <div id="br-info" style="font-size:12px;margin:8px 0"></div>
+    <button class="btn btn-s" onclick="sacuvajBrojac()">💾 Sačuvaj brojač</button>
+  </div>
   <div class="card" id="otp-hdr">
     <div id="tocenje-semafor" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px"></div>
     <div class="card-title"><span class="card-title-left">📋 Nova otpremnica</span></div>
@@ -1214,6 +1226,7 @@ let S={
   firme:[],cistijerne:[],vozila:[],gradilista:[],
   otpremnice:[],transferi:[],ulazi:[],
   treceLiceFirme:[],       // predefinisana lista trećih lica (LKW/Bossil su "firme", ovo su spoljni kupci)
+  brojaci:[],              // dnevna stanja brojača pumpe po cisterni (početak/kraj dana) - za otkrivanje neunesenih točenja
   treceVozila:[],          // istorija ranije unesenih vozila/vozača za treća lica (autocomplete, ne trajna baza)
   otpremnice3:[],          // otpremnice za točenje trećim licima - odvojeno od glavnih otpremnica
   vrstaGoriva:['Dizel'],   // editabilna lista (Postavke) - default samo Dizel
@@ -1231,6 +1244,7 @@ function load(){
     // Dopuna nedostajućih polja ako su podaci sačuvani prije ove verzije
     if(!S.treceLiceFirme)S.treceLiceFirme=[];
     if(!S.treceVozila)S.treceVozila=[];
+    if(!S.brojaci)S.brojaci=[];
     if(!S.otpremnice3)S.otpremnice3=[];
     return;}}catch(e){}
   initDemo();
@@ -2492,13 +2506,15 @@ function urediTransfer(id){
   const row=document.getElementById('tr-row-'+id);if(!row)return;
   row.innerHTML=`<td colspan="6" style="padding:10px">
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">
+      <div class="fg" style="flex:1;min-width:140px"><label style="font-size:10px">Daje (cisterna)</label><select id="tre-daje-${id}">${S.cistijerne.map(c=>`<option value="${c.id}" ${c.id===t.cistijernDajeId?'selected':''}>${c.reg}</option>`).join('')}</select></div>
+      <div class="fg" style="flex:1;min-width:140px"><label style="font-size:10px">Prima (cisterna)</label><select id="tre-prima-${id}">${S.cistijerne.map(c=>`<option value="${c.id}" ${c.id===t.cistijernPrimaId?'selected':''}>${c.reg}</option>`).join('')}</select></div>
       <div class="fg" style="flex:1;min-width:150px"><label style="font-size:10px">Datum</label><input type="date" id="tre-dat-${id}" value="${(t.datum||'').split('T')[0]}"></div>
       <div class="fg" style="flex:1;min-width:120px"><label style="font-size:10px">Litara</label><input type="number" step=".5" id="tre-lit-${id}" value="${t.litara}"></div>
       <div class="fg" style="flex:2;min-width:150px"><label style="font-size:10px">Lokacija</label><input id="tre-lok-${id}" value="${t.lokacija||''}"></div>
       <button class="btn btn-p" style="padding:6px 14px;font-size:12px" onclick="sacuvajTransfer('${id}')">✓ Sačuvaj</button>
       <button class="btn btn-s" style="padding:6px 14px;font-size:12px" onclick="renderTr()">✕ Otkaži</button>
     </div>
-    <div style="font-size:10px;color:var(--mut2);margin-top:5px">Napomena: izmjena litara NE mijenja koja je faktura izvor (ostaje kako je bilo pri prvom unosu).</div>
+    <div style="font-size:10px;color:var(--mut2);margin-top:5px">Ako promijeniš cisternu koja daje ili litre, gorivo se automatski ponovo rasporedi po fakturama (FIFO).</div>
   </td>`;
   ciklusDatumskihPolja();
 }
@@ -2531,11 +2547,31 @@ async function sacuvajTransfer(id){
   const noviDatum=document.getElementById('tre-dat-'+id).value;
   const noviLit=parseFloat(document.getElementById('tre-lit-'+id).value);
   const novaLok=document.getElementById('tre-lok-'+id).value.trim();
+  const novaDaje=document.getElementById('tre-daje-'+id).value;
+  const novaPrima=document.getElementById('tre-prima-'+id).value;
   if(isNaN(noviLit)||noviLit<=0){toast('⚠ Unesi ispravan broj litara.');return;}
   if(!noviDatum){toast('⚠ Unesi datum.');return;}
+  if(novaDaje===novaPrima){toast('⚠ Cisterna koja daje i koja prima ne mogu biti iste.');return;}
+  const promijenjenaDaje = novaDaje!==t.cistijernDajeId;
+  const promijenjenaPrima = novaPrima!==t.cistijernPrimaId;
+  // Ako je iz ovog transfera već sipano vozilima na staroj odredišnoj cisterni, promjena "prima" kvari tu vezu
+  if(promijenjenaPrima){
+    let vecSipano=0;
+    [...S.otpremnice,...S.otpremnice3].forEach(o=>(o.stavke||[]).forEach(s=>(s.izvorUlaza||[]).forEach(x=>{if(x.ulazId==='transfer:'+id) vecSipano+=x.litara;})));
+    if(vecSipano>0 && !confirm(`⚠️ Iz ovog transfera je već ${vecSipano.toFixed(1)} L sipano vozilima na staroj cisterni (${gC(t.cistijernPrimaId)?.reg||'?'}). Promjena cisterne koja prima poremetiće sljedivost tih otpremnica.\n\nNastaviti ipak?`)) return;
+  }
+  const podaci={datum:noviDatum,litara:noviLit,lokacija:novaLok,cistijernDajeId:novaDaje,cistijernPrimaId:novaPrima};
+  // Ako se promijenila cisterna koja daje ili količina, gorivo se ponovo raspoređuje po fakturama nove izvorne cisterne (FIFO)
+  if(promijenjenaDaje || noviLit!==t.litara){
+    const staro=t.izvorUlaza; t.izvorUlaza=[]; // privremeno isključi staru alokaciju iz računa
+    const dost=raspolozivoLitara(novaDaje);
+    if(noviLit>dost+10){t.izvorUlaza=staro;toast(`⚠ Cisterna ${gC(novaDaje)?.reg||'?'} nema dovoljno goriva (raspoloživo ${dost.toFixed(1)} L).`,4000);return;}
+    podaci.izvorUlaza=fifoAlociraj(novaDaje,noviLit);
+    t.izvorUlaza=staro;
+  }
   try{
-    await window.FB.setDoc(window.FB.docRef('transferi',id),{datum:noviDatum,litara:noviLit,lokacija:novaLok},{merge:true});
-    logAkcija('Uređen transfer', `${gC(t.cistijernDajeId)?.reg||'?'} → ${gC(t.cistijernPrimaId)?.reg||'?'}: ${t.datum}→${noviDatum}, ${t.litara}L→${noviLit}L`);
+    await window.FB.setDoc(window.FB.docRef('transferi',id),podaci,{merge:true});
+    logAkcija('Korigovan transfer', `${gC(t.cistijernDajeId)?.reg||'?'}→${gC(t.cistijernPrimaId)?.reg||'?'} postaje ${gC(novaDaje)?.reg||'?'}→${gC(novaPrima)?.reg||'?'}; ${t.datum}→${noviDatum}; ${t.litara}L→${noviLit}L`);
     toast('✓ Sačuvano!');
   }catch(e){toast('⚠ Greška: '+e.message);}
 }
@@ -3224,7 +3260,99 @@ function renderRaz(){
       <div class="raz-row"><span>➖ Dato cistijerni</span><span class="raz-val" style="color:var(--red)">${ukTrD} L</span></div>
       <div class="raz-row"><span>= Saldo</span><span class="raz-val" style="color:${ok?'var(--acc)':'var(--red)'}">${saldo.toFixed(1)} L</span></div>
     </div>`;
+  }).join('')+`<div class="card" style="margin-top:14px"><div class="card-title">🔢 Dnevna provjera brojača pumpe</div>${tabelaProvjereBrojaca(od,do_)}</div>`;
+}
+
+// ═══ BROJAČ PUMPE — dnevna provjera (hvata neunesena točenja) ═══
+const TOLERANCIJA_BROJAC=10;
+function brojacDocId(cid,datum){return cid+'_'+datum;}
+// Sve što je tog dana prošlo kroz pumpu cisterne: točenja vozilima (naša i treća lica) + transferi koje je dala
+function izdatoNaDan(cid,datum){
+  let s=0;
+  S.otpremnice.filter(o=>!o.stornirano&&o.cistijernId===cid&&(o.datum||'').slice(0,10)===datum).forEach(o=>o.stavke.forEach(x=>s+=x.litara));
+  S.otpremnice3.filter(o=>!o.stornirano&&o.cistijernId===cid&&(o.datum||'').slice(0,10)===datum).forEach(o=>o.stavke.forEach(x=>s+=x.litara));
+  S.transferi.filter(t=>t.cistijernDajeId===cid&&(t.datum||'').slice(0,10)===datum).forEach(t=>s+=t.litara);
+  return s;
+}
+function prethodniBrojac(cid,datum){
+  return S.brojaci.filter(b=>b.cistijernId===cid&&b.datum<datum&&b.kraj!=null).sort((a,b)=>b.datum.localeCompare(a.datum))[0]||null;
+}
+function populateBrojacCist(){
+  const sel=document.getElementById('br-cist');if(!sel)return;
+  const trenutna=sel.value;
+  const lista=(currentUser&&currentUser.role==='vozac'&&currentUser.cisterna_id)?S.cistijerne.filter(c=>c.id===currentUser.cisterna_id):S.cistijerne;
+  sel.innerHTML=lista.map(c=>`<option value="${c.id}">${c.reg}</option>`).join('');
+  if(trenutna&&lista.find(c=>c.id===trenutna)) sel.value=trenutna;
+  const dat=document.getElementById('br-dat');
+  if(dat&&!dat.value) dat.value=today();
+}
+// force=true: uvijek prepiši polja (promjena cisterne/datuma); inače samo popuni prazna polja koja korisnik trenutno ne kuca
+function ucitajBrojac(force){
+  const cid=document.getElementById('br-cist')?.value, datum=document.getElementById('br-dat')?.value;
+  if(!cid||!datum)return;
+  const b=S.brojaci.find(x=>x.id===brojacDocId(cid,datum));
+  ['poc','kraj'].forEach(k=>{
+    const el=document.getElementById('br-'+k);
+    const vr=b?(k==='poc'?b.pocetak:b.kraj):null;
+    if(force || (!el.value && document.activeElement!==el)) el.value = vr!=null?vr:'';
+  });
+  const prev=prethodniBrojac(cid,datum);
+  document.getElementById('br-poc').placeholder = prev?`jučer kraj: ${prev.kraj}`:'';
+  osvjeziBrojacInfo();
+}
+function osvjeziBrojacInfo(){
+  const el=document.getElementById('br-info');if(!el)return;
+  const cid=document.getElementById('br-cist').value, datum=document.getElementById('br-dat').value;
+  if(!cid||!datum){el.innerHTML='';return;}
+  const poc=parseFloat(document.getElementById('br-poc').value), kraj=parseFloat(document.getElementById('br-kraj').value);
+  const zapisano=izdatoNaDan(cid,datum);
+  const poruke=[];
+  const prev=prethodniBrojac(cid,datum);
+  if(!isNaN(poc)&&prev&&Math.abs(poc-prev.kraj)>1){
+    poruke.push(`<div style="color:var(--acc2)">⚠️ Početak (${poc}) se ne slaže sa krajem od ${prev.datum} (${prev.kraj}) — razlika ${(poc-prev.kraj).toFixed(1)} L. Točenje van evidencije između ta dva dana?</div>`);
+  }
+  if(!isNaN(poc)&&!isNaN(kraj)){
+    const poBrojacu=kraj-poc;
+    if(poBrojacu<0){poruke.push('<div style="color:var(--red)">⚠️ Kraj je manji od početka — provjeri brojeve.</div>');}
+    else{
+      const razlika=poBrojacu-zapisano;
+      if(Math.abs(razlika)<=TOLERANCIJA_BROJAC) poruke.push(`<div style="color:var(--acc)">✅ Slaže se — brojač ${poBrojacu.toFixed(1)} L, uneseno ${zapisano.toFixed(1)} L.</div>`);
+      else if(razlika>0) poruke.push(`<div style="color:var(--red)">⚠️ Brojač kaže ${poBrojacu.toFixed(1)} L, a uneseno je samo ${zapisano.toFixed(1)} L — <b>fali ${razlika.toFixed(1)} L</b> (moguće neuneseno točenje).</div>`);
+      else poruke.push(`<div style="color:var(--acc2)">⚠️ Uneseno je ${zapisano.toFixed(1)} L, a brojač kaže samo ${poBrojacu.toFixed(1)} L — <b>višak u unosu ${(-razlika).toFixed(1)} L</b> (dupli ili pogrešan unos?).</div>`);
+    }
+  }else{
+    poruke.push(`<div style="color:var(--mut2)">Uneseno u otpremnice/transfere za ovaj dan: ${zapisano.toFixed(1)} L</div>`);
+  }
+  el.innerHTML=poruke.join('');
+}
+async function sacuvajBrojac(){
+  const cid=document.getElementById('br-cist').value, datum=document.getElementById('br-dat').value;
+  const pocS=document.getElementById('br-poc').value, krajS=document.getElementById('br-kraj').value;
+  if(!cid||!datum){toast('⚠ Odaberi cisternu i datum.');return;}
+  if(pocS===''&&krajS===''){toast('⚠ Upiši bar početno stanje brojača.');return;}
+  const podaci={cistijernId:cid,datum,pocetak:pocS===''?null:parseFloat(pocS),kraj:krajS===''?null:parseFloat(krajS),unio:currentUser?currentUser.username:'',azurirano:nowDT()};
+  if(podaci.pocetak!=null&&podaci.kraj!=null&&podaci.kraj<podaci.pocetak){toast('⚠ Kraj dana ne može biti manji od početka.');return;}
+  try{
+    await window.FB.setDoc(window.FB.docRef('brojaci',brojacDocId(cid,datum)),podaci,{merge:true});
+    const i=S.brojaci.findIndex(b=>b.id===brojacDocId(cid,datum));
+    if(i>=0) Object.assign(S.brojaci[i],podaci); else S.brojaci.push({id:brojacDocId(cid,datum),...podaci});
+    osvjeziBrojacInfo();
+    toast('✓ Brojač sačuvan.');
+  }catch(e){toast('⚠ Greška: '+e.message);}
+}
+// Tabela za Razduženje: svi dani u periodu gdje postoje oba stanja brojača
+function tabelaProvjereBrojaca(od,do_){
+  const lista=S.brojaci.filter(b=>b.pocetak!=null&&b.kraj!=null&&(!od||b.datum>=od)&&(!do_||b.datum<=do_))
+    .sort((a,b)=>(a.datum.localeCompare(b.datum))||((gC(a.cistijernId)?.reg||'').localeCompare(gC(b.cistijernId)?.reg||'')));
+  if(!lista.length) return '<div class="empty">Nema unesenih stanja brojača za ovaj period (početak i kraj dana).</div>';
+  let problema=0;
+  const redovi=lista.map(b=>{
+    const poBr=b.kraj-b.pocetak, zap=izdatoNaDan(b.cistijernId,b.datum), raz=poBr-zap;
+    const ok=Math.abs(raz)<=TOLERANCIJA_BROJAC; if(!ok) problema++;
+    return `<tr><td class="mono">${b.datum}</td><td><span class="tag t-ok">${gC(b.cistijernId)?.reg||'?'}</span></td><td class="mono">${b.pocetak}</td><td class="mono">${b.kraj}</td><td><b>${poBr.toFixed(1)} L</b></td><td>${zap.toFixed(1)} L</td><td><span class="tag ${ok?'t-ok':'t-warn'}">${ok?'✅ OK':(raz>0?'fali ':'višak ')+Math.abs(raz).toFixed(1)+' L'}</span></td></tr>`;
   }).join('');
+  return `<div style="font-size:12px;margin-bottom:8px;color:${problema?'var(--red)':'var(--acc)'}">${problema?`⚠️ ${problema} dan(a) sa razlikom većom od ${TOLERANCIJA_BROJAC} L`:'✅ Svi dani se slažu'}</div>
+    <div class="tw"><table><thead><tr><th>Datum</th><th>Cisterna</th><th>Početak</th><th>Kraj</th><th>Po brojaču</th><th>Uneseno</th><th>Provjera</th></tr></thead><tbody>${redovi}</tbody></table></div>`;
 }
 
 // ═══ IZVJEŠTAJ ═══
@@ -4622,6 +4750,7 @@ function logAkcija(akcija, detalji){
 function renderAll(){
   populateAll();populateTrecaFirme();renderLists();renderVozilaTbl();
   renderDanas();renderTr();renderUl();renderTlLista();renderPregled();renderIzv();
+  populateBrojacCist();ucitajBrojac(false);
   if(currentUser&&currentUser.role==='admin') renderDashboard();
 }
 
@@ -4681,6 +4810,7 @@ function startSync(){
   watch('otpremnice','otpremnice');
   watch('otpremnice3','otpremnice3');
   watch('transferi','transferi');
+  watch('brojaci','brojaci');
   unsubscribers.push(window.FB.watchDoc('settings/mojaFirma',data=>{
     if(data) S.mojaFirma=data;
     const el=document.getElementById('mf-n');
