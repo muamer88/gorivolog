@@ -1295,6 +1295,64 @@ function gV(id){return S.vozila.find(v=>v.id===id);}
 // taj ostatak se i dalje računa kao "preostalo" na originalnoj fakturi. KORISTITI SAMO ZA PRIKAZ "Preostalo"
 // korisniku (ULAZI lista, Porijeklo goriva) - NE za FIFO alokaciju, koja mora znati šta je fizički napustilo
 // konkretnu cisternu (za to služi potrosenoPoSerijama()).
+// ═══ VEZE SA FAKTURAMA — uvijek se računaju iznova, hronološki (prvi ulaz, prvi izlaz) ═══
+// Ne zavisi od redoslijeda kojim su papiri prepisani u sistem. Ne mijenja ništa u bazi —
+// sačuvano polje izvorUlaza se više ne koristi za prikaz, samo ovo izračunato.
+let _vezeCache={sig:null,byObj:new WeakMap(),byId:{}};
+function vezeSig(){
+  return [S.otpremnice.length,S.otpremnice3.length,S.transferi.length,S.ulazi.length,
+    curOtp?curOtp.stavke.length:-1,curOtp3?curOtp3.stavke.length:-1,window._dataVer||0].join('|');
+}
+function izracunajVeze(){
+  const byObj=new WeakMap(), byId={};
+  const kljuc=(d,v)=>{const s=String(d||'');return s.length>10?s.slice(0,16):(s+'T'+(v||'00:00'));};
+  const cisterne=new Set();
+  S.cistijerne.forEach(x=>cisterne.add(x.id));
+  S.ulazi.forEach(u=>cisterne.add(u.cistijernId));
+  S.transferi.forEach(t=>{cisterne.add(t.cistijernDajeId);cisterne.add(t.cistijernPrimaId);});
+  // Stornirano nema veze ni sa čim
+  [...S.otpremnice,...S.otpremnice3].filter(o=>o.stornirano).forEach(o=>(o.stavke||[]).forEach(s=>{byObj.set(s,[]);}));
+  cisterne.forEach(cid=>{
+    if(!cid) return;
+    // Izvori goriva u cisterni: fakture/ulazi (i pozitivne korekcije) + primljeni transferi, po datumu
+    const izvori=[];
+    S.ulazi.filter(u=>u.cistijernId===cid&&u.litara>0).forEach(u=>izvori.push({ulazId:u.id,ost:u.litara,k:kljuc(u.datum)}));
+    S.transferi.filter(t=>!t.stornirano&&t.cistijernPrimaId===cid&&t.litara>0).forEach(t=>izvori.push({ulazId:'transfer:'+t.id,ost:t.litara,k:kljuc(t.datum)}));
+    izvori.sort((a,b)=>a.k.localeCompare(b.k));
+    // Sve što je izašlo iz cisterne: točenja (naša i treća lica), dati transferi, negativne korekcije — po datumu i vremenu
+    const izlazi=[];
+    const dodajO=o=>(o.stavke||[]).forEach(s=>izlazi.push({obj:s,lit:+s.litara||0,k:kljuc(o.datum,s.vrijeme)}));
+    S.otpremnice.filter(o=>!o.stornirano&&o.cistijernId===cid).forEach(dodajO);
+    S.otpremnice3.filter(o=>!o.stornirano&&o.cistijernId===cid).forEach(dodajO);
+    S.transferi.filter(t=>!t.stornirano&&t.cistijernDajeId===cid).forEach(t=>izlazi.push({obj:t,lit:+t.litara||0,k:kljuc(t.datum)}));
+    S.ulazi.filter(u=>u.cistijernId===cid&&u.litara<0).forEach(u=>izlazi.push({obj:u,lit:-u.litara,k:kljuc(u.datum)}));
+    if(curOtp&&curOtp.cistijernId===cid) curOtp.stavke.forEach(s=>izlazi.push({obj:s,lit:+s.litara||0,k:'9999'}));
+    if(curOtp3&&curOtp3.cistijernId===cid) curOtp3.stavke.forEach(s=>izlazi.push({obj:s,lit:+s.litara||0,k:'9999'}));
+    izlazi.sort((a,b)=>a.k.localeCompare(b.k));
+    let i=0;
+    izlazi.forEach(p=>{
+      let ost=p.lit; const al=[];
+      while(ost>0.0001&&i<izvori.length){
+        const s=izvori[i]; const uzmi=Math.min(ost,s.ost);
+        if(uzmi>0){al.push({ulazId:s.ulazId,litara:+uzmi.toFixed(3)}); s.ost-=uzmi; ost-=uzmi;}
+        if(s.ost<=0.0001) i++;
+      }
+      byObj.set(p.obj,al); if(p.obj.id) byId[p.obj.id]=al;
+    });
+  });
+  return {byObj,byId};
+}
+// Iz kojih faktura/transfera je došlo gorivo za ovaj zapis (stavku otpremnice, transfer ili negativnu korekciju)
+function izvorOf(obj){
+  if(!obj) return [];
+  const sig=vezeSig();
+  if(_vezeCache.sig!==sig){const r=izracunajVeze();_vezeCache={sig,byObj:r.byObj,byId:r.byId};}
+  const a=_vezeCache.byObj.get(obj);
+  if(a) return a;
+  if(obj.id&&_vezeCache.byId[obj.id]) return _vezeCache.byId[obj.id];
+  return [];
+}
+
 function potrosenoPoSerijamaKrajnje(){
   const mapa={};
   const dodajKrozLanac=(ulazId, litara, depth)=>{
@@ -1302,14 +1360,13 @@ function potrosenoPoSerijamaKrajnje(){
     if(String(ulazId).startsWith('transfer:')){
       const tid=ulazId.split(':')[1];
       const t=S.transferi.find(y=>y.id===tid);
-      if(!t||!t.izvorUlaza||!t.izvorUlaza.length) return;
-      const totalT=t.izvorUlaza.reduce((a,x)=>a+x.litara,0)||1;
-      t.izvorUlaza.forEach(src=>dodajKrozLanac(src.ulazId,(src.litara/totalT)*litara,depth+1));
+      if(!t||!(t.litara>0)) return;
+      izvorOf(t).forEach(src=>dodajKrozLanac(src.ulazId,(src.litara/t.litara)*litara,depth+1));
       return;
     }
     mapa[ulazId]=(mapa[ulazId]||0)+litara;
   };
-  const dodaj=arr=>{(arr||[]).forEach(rec=>{(rec.izvorUlaza||[]).forEach(x=>{ if(x.ulazId) dodajKrozLanac(x.ulazId,x.litara); });});};
+  const dodaj=arr=>{(arr||[]).forEach(rec=>{izvorOf(rec).forEach(x=>{ if(x.ulazId) dodajKrozLanac(x.ulazId,x.litara); });});};
   S.otpremnice.filter(o=>!o.stornirano).forEach(o=>dodaj(o.stavke));
   S.otpremnice3.filter(o=>!o.stornirano).forEach(o=>dodaj(o.stavke));
   if(curOtp) dodaj(curOtp.stavke);
@@ -1318,10 +1375,11 @@ function potrosenoPoSerijamaKrajnje(){
 }
 function potrosenoPoSerijama(){
   const mapa={};
-  const dodaj=arr=>{(arr||[]).forEach(rec=>{(rec.izvorUlaza||[]).forEach(x=>{ if(x.ulazId) mapa[x.ulazId]=(mapa[x.ulazId]||0)+x.litara; });});};
+  const dodaj=arr=>{(arr||[]).forEach(rec=>{izvorOf(rec).forEach(x=>{ if(x.ulazId) mapa[x.ulazId]=(mapa[x.ulazId]||0)+x.litara; });});};
   S.otpremnice.filter(o=>!o.stornirano).forEach(o=>dodaj(o.stavke));
   S.otpremnice3.filter(o=>!o.stornirano).forEach(o=>dodaj(o.stavke));
   dodaj(S.transferi.filter(t=>!t.stornirano));
+  dodaj(S.ulazi.filter(u=>u.litara<0));
   if(curOtp) dodaj(curOtp.stavke);   // već dodane stavke u trenutno otvorenoj (nesnimljenoj) otpremnici
   if(curOtp3) dodaj(curOtp3.stavke);
   return mapa;
@@ -1370,17 +1428,19 @@ function resolveChainLeaf(ulazId, litara, depth){
   if(String(ulazId).startsWith('transfer:')){
     const tid=ulazId.split(':')[1];
     const t=S.transferi.find(y=>y.id===tid);
-    if(!t||!t.izvorUlaza||!t.izvorUlaza.length){
-      const cd=t?gC(t.cistijernDajeId):null;
-      return [{opis:`transfer iz cisterne ${cd?cd.reg:'?'} (${t?(t.datum||'').split('T')[0]:'?'}) — dalje porijeklo nepoznato`,litara}];
+    const cd=t?gC(t.cistijernDajeId):null;
+    const izv=t?izvorOf(t):[];
+    if(!t||!(t.litara>0)||!izv.length){
+      return [{opis:`transfer iz cisterne ${cd?cd.reg:'?'} (${t?(t.datum||'').split('T')[0]:'?'}) — bez evidentiranog ulaza u toj cisterni`,litara}];
     }
-    const totalT=t.izvorUlaza.reduce((a,x)=>a+x.litara,0)||1;
-    let rez=[];
-    t.izvorUlaza.forEach(src=>{
-      const udio=(src.litara/totalT)*litara;
+    let rez=[], pokriveno=0;
+    izv.forEach(src=>{
+      const udio=(src.litara/t.litara)*litara;
       if(udio<=0.001)return;
+      pokriveno+=udio;
       rez=rez.concat(resolveChainLeaf(src.ulazId,udio,depth+1));
     });
+    if(litara-pokriveno>0.05) rez.push({opis:`transfer iz ${cd?cd.reg:'?'} — bez evidentiranog ulaza u toj cisterni`,litara:litara-pokriveno});
     return rez;
   }
   const u=S.ulazi.find(y=>y.id===ulazId);
@@ -1918,7 +1978,7 @@ function renderStavke(){
       ${s.vrijeme?`<span>🕐 ${s.vrijeme}</span>`:''}
       <span>${s.sig?'✅ Potpisano':'⚠️ Bez potpisa'}</span>
     </div>
-    <div class="admin-only" style="font-size:11px;color:var(--acc4);margin-top:4px">📦 ${opisAlokacije(s.izvorUlaza)}</div>
+    <div class="admin-only" style="font-size:11px;color:var(--acc4);margin-top:4px">📦 ${opisAlokacije(izvorOf(s))}</div>
     </div>`;
   }).join('');
 }
@@ -2395,7 +2455,7 @@ function prikaziPorekloGoriva(){
   const c=gC(o.cistijernId);
   const rows=o.stavke.map((s,i)=>{
     const naziv = src.tip==='otpremnice3' ? s.reg : (stavkaVehInfo(s).reg);
-    return `<tr><td>${i+1}</td><td>${naziv}</td><td>${s.vozacIme||s.vozac||'—'}</td><td style="text-align:right">${s.litara}L</td><td style="font-size:11px">${opisAlokacije(s.izvorUlaza)}</td></tr>`;
+    return `<tr><td>${i+1}</td><td>${naziv}</td><td>${s.vozacIme||s.vozac||'—'}</td><td style="text-align:right">${s.litara}L</td><td style="font-size:11px">${opisAlokacije(izvorOf(s))}</td></tr>`;
   }).join('');
   document.getElementById('print-body').innerHTML=`<div style="padding:20px;color:#000;font-family:Arial,sans-serif">
     <h3 style="margin-bottom:4px">🧾 Interni pregled — porijeklo goriva</h3>
@@ -2527,7 +2587,7 @@ async function deleteTransfer(id){
   const trKljuc='transfer:'+id;
   [...S.otpremnice, ...S.otpremnice3].forEach(o=>{
     (o.stavke||[]).forEach(s=>{
-      (s.izvorUlaza||[]).forEach(x=>{ if(x.ulazId===trKljuc) potroseno+=x.litara; });
+      izvorOf(s).forEach(x=>{ if(x.ulazId===trKljuc) potroseno+=x.litara; });
     });
   });
   if(potroseno>0){
@@ -2557,7 +2617,7 @@ async function sacuvajTransfer(id){
   // Ako je iz ovog transfera već sipano vozilima na staroj odredišnoj cisterni, promjena "prima" kvari tu vezu
   if(promijenjenaPrima){
     let vecSipano=0;
-    [...S.otpremnice,...S.otpremnice3].forEach(o=>(o.stavke||[]).forEach(s=>(s.izvorUlaza||[]).forEach(x=>{if(x.ulazId==='transfer:'+id) vecSipano+=x.litara;})));
+    [...S.otpremnice,...S.otpremnice3].forEach(o=>(o.stavke||[]).forEach(s=>izvorOf(s).forEach(x=>{if(x.ulazId==='transfer:'+id) vecSipano+=x.litara;})));
     if(vecSipano>0 && !confirm(`⚠️ Iz ovog transfera je već ${vecSipano.toFixed(1)} L sipano vozilima na staroj cisterni (${gC(t.cistijernPrimaId)?.reg||'?'}). Promjena cisterne koja prima poremetiće sljedivost tih otpremnica.\n\nNastaviti ipak?`)) return;
   }
   const podaci={datum:noviDatum,litara:noviLit,lokacija:novaLok,cistijernDajeId:novaDaje,cistijernPrimaId:novaPrima};
@@ -2719,7 +2779,7 @@ function tragZaSerijom(searchKey, poreklo){
   const skeniraj=(arr,vrsta)=>{
     arr.forEach(rec=>{
       (rec.stavke||[rec]).forEach(s=>{
-        (s.izvorUlaza||[]).forEach(x=>{
+        izvorOf(s).forEach(x=>{
           if(x.ulazId===searchKey){
             let vozilo='—', gradiliste='—', firma='—';
             if(vrsta==='Otpremnica'){
@@ -2852,7 +2912,7 @@ function renderPregled(){
     const matchingUlazIds=new Set(S.ulazi.filter(u=>(u.brFakture||'').toLowerCase().includes(brojQ)).map(u=>u.id));
     list=list.filter(o=>
       (o.brojOtp||'').toLowerCase().includes(brojQ) ||
-      o.stavke.some(s=>(s.izvorUlaza||[]).some(x=>izvorSeSvodiNaFakturu(x.ulazId, matchingUlazIds)))
+      o.stavke.some(s=>izvorOf(s).some(x=>izvorSeSvodiNaFakturu(x.ulazId, matchingUlazIds)))
     );
   }
   const el=document.getElementById('tbl-pregled');
@@ -2861,7 +2921,7 @@ function renderPregled(){
     list.map(o=>{const c=gC(o.cistijernId),g=gG(o.gradId),uk=o.stavke.reduce((a,s)=>a+s.litara,0);
       const storno=o.stornirano;
       const fakture=new Set();
-      o.stavke.forEach(s=>(s.izvorUlaza||[]).forEach(x=>resolveChainFakture(x.ulazId,0,fakture)));
+      o.stavke.forEach(s=>izvorOf(s).forEach(x=>resolveChainFakture(x.ulazId,0,fakture)));
       const fakturaTxt=[...fakture].join(', ')||'—';
       const firmeOtp=[...new Set(o.stavke.map(s=>{const f=gF(stavkaVehInfo(s).firmaId);return f?f.naziv:null;}).filter(Boolean))].join(' / ')||'—';
       return`<tr style="${storno?'opacity:.55':''}"><td class="mono" style="font-size:11px">${o.brojOtp}${storno?' <span class="tag t-warn" style="font-size:9px">STORNO</span>':''}</td><td class="mono" style="font-size:12px;${storno?'text-decoration:line-through':''}">${o.datum}</td><td><span class="tag t-ok">${c?c.reg:'?'}</span></td><td><span class="tag t-g">${g?g.naziv:'?'}</span></td><td style="font-size:12px">${firmeOtp}</td><td class="mono" style="font-size:11px;color:var(--mut2)">${fakturaTxt}</td><td style="font-size:12px">${o.gorivo}</td><td style="text-align:center">${o.stavke.length}</td><td><span class="tag ${storno?'t-warn':'t-l'}">${uk}L</span></td><td class="admin-only" style="white-space:nowrap">
@@ -3434,7 +3494,7 @@ function resolveChainFakture(ulazId, depth, izlaz){
   if(String(ulazId).startsWith('transfer:')){
     const tid=ulazId.split(':')[1];
     const t=S.transferi.find(y=>y.id===tid);
-    if(t&&t.izvorUlaza) t.izvorUlaza.forEach(src=>resolveChainFakture(src.ulazId,depth+1,izlaz));
+    if(t) izvorOf(t).forEach(src=>resolveChainFakture(src.ulazId,depth+1,izlaz));
     return;
   }
   const u=S.ulazi.find(y=>y.id===ulazId);
@@ -3447,8 +3507,8 @@ function izvorSeSvodiNaFakturu(ulazId, matchingSet, depth){
   if(String(ulazId).startsWith('transfer:')){
     const tid=ulazId.split(':')[1];
     const t=S.transferi.find(y=>y.id===tid);
-    if(!t||!t.izvorUlaza) return false;
-    return t.izvorUlaza.some(src=>izvorSeSvodiNaFakturu(src.ulazId, matchingSet, depth+1));
+    if(!t) return false;
+    return izvorOf(t).some(src=>izvorSeSvodiNaFakturu(src.ulazId, matchingSet, depth+1));
   }
   return false;
 }
@@ -3457,18 +3517,19 @@ function resolveChainCost(ulazId, litara, depth){
   if(String(ulazId).startsWith('transfer:')){
     const tid=ulazId.split(':')[1];
     const t=S.transferi.find(y=>y.id===tid);
-    if(!t||!t.izvorUlaza||!t.izvorUlaza.length) return 0;
-    const totalT=t.izvorUlaza.reduce((a,x)=>a+x.litara,0)||1;
+    if(!t||!(t.litara>0)) return 0;
+    const totalT=t.litara;
     let trosak=0;
-    t.izvorUlaza.forEach(src=>{ trosak+=resolveChainCost(src.ulazId,(src.litara/totalT)*litara,depth+1); });
+    izvorOf(t).forEach(src=>{ trosak+=resolveChainCost(src.ulazId,(src.litara/totalT)*litara,depth+1); });
     return trosak;
   }
   const u=S.ulazi.find(y=>y.id===ulazId);
   return (u&&u.cijenaLitra) ? litara*u.cijenaLitra : 0;
 }
 function izracunajTrosakStavke(s){
-  if(!s.izvorUlaza||!s.izvorUlaza.length) return 0;
-  return s.izvorUlaza.reduce((a,x)=>a+resolveChainCost(x.ulazId,x.litara,0),0);
+  const izv=izvorOf(s);
+  if(!izv.length) return 0;
+  return izv.reduce((a,x)=>a+resolveChainCost(x.ulazId,x.litara,0),0);
 }
 
 function renderIzv(){
@@ -4748,6 +4809,7 @@ function logAkcija(akcija, detalji){
 }
 
 function renderAll(){
+  window._dataVer=(window._dataVer||0)+1;
   populateAll();populateTrecaFirme();renderLists();renderVozilaTbl();
   renderDanas();renderTr();renderUl();renderTlLista();renderPregled();renderIzv();
   populateBrojacCist();ucitajBrojac(false);
