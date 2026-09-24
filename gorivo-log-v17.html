@@ -2484,7 +2484,7 @@ function renderTr(){
   el.innerHTML='<div class="tw"><table><thead><tr><th>Datum</th><th>Daje</th><th>Prima</th><th>Litara</th><th>Lokacija</th><th></th></tr></thead><tbody>'+
     [...S.transferi].sort((a,b)=>(a.datum||'').localeCompare(b.datum||'')).map(t=>{
       const cd=gC(t.cistijernDajeId),cp=gC(t.cistijernPrimaId);
-      return`<tr id="tr-row-${t.id}"><td class="mono">${(t.datum||'').replace('T',' ')}</td><td><span class="tag t-warn">${cd?cd.reg:'?'}</span></td><td><span class="tag t-ok">${cp?cp.reg:'?'}</span></td><td><span class="tag t-l">${t.litara}L</span></td><td style="font-size:12px;color:var(--mut2)">${t.lokacija||'—'}</td><td style="white-space:nowrap"><button class="btn btn-pr" style="padding:5px 9px;font-size:11px" onclick="printTransfer('${t.id}')">🖨</button> <button class="btn btn-s" style="padding:5px 9px;font-size:11px" onclick="urediTransfer('${t.id}')">✏️</button></td></tr>`;
+      return`<tr id="tr-row-${t.id}"><td class="mono">${(t.datum||'').replace('T',' ')}</td><td><span class="tag t-warn">${cd?cd.reg:'?'}</span></td><td><span class="tag t-ok">${cp?cp.reg:'?'}</span></td><td><span class="tag t-l">${t.litara}L</span></td><td style="font-size:12px;color:var(--mut2)">${t.lokacija||'—'}</td><td style="white-space:nowrap"><button class="btn btn-pr" style="padding:5px 9px;font-size:11px" onclick="printTransfer('${t.id}')">🖨</button> <button class="btn btn-s" style="padding:5px 9px;font-size:11px" onclick="urediTransfer('${t.id}')">✏️</button> <button class="btn btn-r" style="padding:5px 9px;font-size:11px" onclick="deleteTransfer('${t.id}')">✕</button></td></tr>`;
     }).join('')+'</tbody></table></div>';
 }
 function urediTransfer(id){
@@ -2501,6 +2501,30 @@ function urediTransfer(id){
     <div style="font-size:10px;color:var(--mut2);margin-top:5px">Napomena: izmjena litara NE mijenja koja je faktura izvor (ostaje kako je bilo pri prvom unosu).</div>
   </td>`;
   ciklusDatumskihPolja();
+}
+async function deleteTransfer(id){
+  const t=S.transferi.find(x=>x.id===id);
+  if(!t){toast('⚠ Zapis nije pronađen.');return;}
+  const cd=gC(t.cistijernDajeId),cp=gC(t.cistijernPrimaId);
+  let poruka=`Obrisati transfer ${t.litara} L: ${cd?cd.reg:'?'} → ${cp?cp.reg:'?'} (${(t.datum||'').replace('T',' ')})?`;
+  let potroseno=0;
+  const trKljuc='transfer:'+id;
+  [...S.otpremnice, ...S.otpremnice3].forEach(o=>{
+    (o.stavke||[]).forEach(s=>{
+      (s.izvorUlaza||[]).forEach(x=>{ if(x.ulazId===trKljuc) potroseno+=x.litara; });
+    });
+  });
+  if(potroseno>0){
+    poruka+=`\n\n⚠️ PAŽNJA: Iz ovog transfera je već ${potroseno.toFixed(1)} L sipano vozilima na odredišnoj cisterni. Brisanje će poremetiti sljedivost tih otpremnica. Provjeri prije brisanja.`;
+  }
+  if(!confirm(poruka))return;
+  try{
+    await window.FB.deleteDoc(window.FB.docRef('transferi',id));
+    S.transferi=S.transferi.filter(x=>x.id!==id);
+    logAkcija('Obrisan transfer', `${cd?cd.reg:'?'} → ${cp?cp.reg:'?'}: ${t.litara}L (${(t.datum||'').replace('T',' ')})`);
+    renderTr();populateAll();
+    toast('✓ Transfer obrisan.');
+  }catch(e){toast('⚠ Greška: '+e.message);}
 }
 async function sacuvajTransfer(id){
   const t=S.transferi.find(x=>x.id===id);if(!t)return;
