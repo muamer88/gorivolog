@@ -207,6 +207,13 @@ body.driver-mode nav{display:none}
 .btn-o{background:transparent;color:var(--acc2);border:1px solid rgba(240,160,32,.3)}.btn-o:hover{background:rgba(240,160,32,.08)}
 .btn-gr{background:transparent;color:var(--acc3);border:1px solid rgba(74,240,200,.3)}.btn-gr:hover{background:rgba(74,240,200,.08)}
 .btn-r{background:transparent;color:var(--red);border:1px solid transparent;padding:5px 10px;font-size:12px}.btn-r:hover{border-color:var(--red)}
+.bu-in{width:100%;padding:8px 9px;font-size:15px;background:var(--surf2);color:var(--txt);font-family:inherit;border:1px solid var(--bord2);border-radius:5px;box-sizing:border-box}
+.bu-in:focus{outline:none;border-color:var(--acc);box-shadow:0 0 0 2px rgba(200,240,74,.2)}
+#bu-tbl td{padding:4px 4px;vertical-align:top;border-bottom:1px solid var(--bord)}
+#bu-tbl th{padding:6px 4px;font-size:11px;color:var(--mut2);text-transform:uppercase;letter-spacing:.05em}
+.bu-info{font-size:11px;color:var(--mut2);margin-top:3px;line-height:1.3}
+.bu-err{font-size:11px;color:var(--red);margin-top:3px;line-height:1.3;font-weight:700}
+.bu-wrn{font-size:11px;color:var(--acc2);margin-top:3px;line-height:1.3}
 .btn-qr{background:transparent;color:var(--acc4);border:1px solid rgba(167,139,250,.3);padding:5px 10px;font-size:12px}.btn-qr:hover{background:rgba(167,139,250,.08)}
 .btn-pr{background:rgba(200,240,74,.08);color:var(--acc);border:1px solid rgba(200,240,74,.2);padding:6px 13px;font-size:12px}
 .btn-xl{background:rgba(74,240,200,.08);color:var(--acc3);border:1px solid rgba(74,240,200,.25);padding:6px 13px;font-size:12px}
@@ -557,7 +564,31 @@ try{
 
   <div id="otp-active" style="display:none">
     <div class="signal sig-ok" id="otp-bar"></div>
-    <div class="card">
+    <div class="admin-only" style="display:flex;justify-content:flex-end;margin:-4px 0 10px">
+      <button type="button" class="btn btn-qr" id="bu-toggle-btn" onclick="toggleBrziUnos()" style="padding:8px 14px;font-size:13px">⚡ Brzi unos (tabela)</button>
+    </div>
+    <div class="card admin-only" id="bu-card" style="display:none">
+      <div class="card-title"><span class="card-title-left">⚡ Brzi unos sa papira</span><span id="bu-ukup" style="font-size:14px;color:var(--acc);font-family:monospace"></span></div>
+      <div class="signal sig-tip" style="font-size:12px"><span>Kucaj garažni broj ili registraciju → <b>Enter</b> → litre → <b>Enter</b> → km/sati → <b>Enter</b> = novi red. Vozač se sam upiše (klikni na njega ako treba promijeniti). Red sa crvenom greškom se ne snima. Potpis nije potreban (papirni unos).</span></div>
+      <div style="overflow-x:auto">
+        <table class="tbl" id="bu-tbl" style="width:100%;border-collapse:collapse;font-size:14px">
+          <thead><tr>
+            <th style="width:34px;text-align:left">#</th>
+            <th style="text-align:left;min-width:150px">Vozilo</th>
+            <th style="text-align:left;width:100px">Litara</th>
+            <th style="text-align:left;width:120px">KM / sati</th>
+            <th style="text-align:left;min-width:150px">Vozač</th>
+            <th style="width:34px"></th>
+          </tr></thead>
+          <tbody id="bu-body"></tbody>
+        </table>
+      </div>
+      <div class="btn-row" style="margin-top:12px">
+        <button type="button" class="btn btn-s" onclick="buDodajRed(true)">➕ Novi red</button>
+        <button type="button" class="btn btn-p btn-lg" onclick="guardedClick(this,sacuvajBrziUnos)" style="flex:2">💾 Sačuvaj sve i štampaj</button>
+      </div>
+    </div>
+    <div class="card" id="otp-add-card">
       <div class="card-title"><span class="card-title-left">+ Dodaj vozilo na otpremnicu</span></div>
       <div id="veh-recent"></div>
       <div class="vsearch-wrap fg">
@@ -2020,6 +2051,247 @@ async function zatvoriOtp(){
     printOtp(saved[0].id, saved[0]);
   }catch(e){toast('⚠ Greška: '+e.message);}
 }
+// ═══ BRZI UNOS (admin) — tabela kao u Excelu za prepisivanje papirnih otpremnica ═══
+// Ne mijenja postojeće zapise. Svaki red na kraju postaje ISTA stavka kao iz običnog unosa
+// (isti snapshot vozila, FIFO izvor, papirniUnos:true), a snima se kroz sacuvajBrziUnos().
+let buRedovi=[]; // {id, q, vehId, lit, mj, voz, vozRucno}
+function toggleBrziUnos(){
+  const card=document.getElementById('bu-card'), add=document.getElementById('otp-add-card'), btn=document.getElementById('bu-toggle-btn');
+  const ukljuci=card.style.display==='none';
+  if(!ukljuci && buRedovi.some(r=>r.q||r.lit||r.mj)){
+    if(!confirm('U tabeli brzog unosa ima neunesenih redova. Zatvoriti tabelu i odbaciti te redove?')) return;
+  }
+  card.style.display=ukljuci?'block':'none';
+  add.style.display=ukljuci?'none':'block';
+  btn.textContent=ukljuci?'↩ Nazad na običan unos':'⚡ Brzi unos (tabela)';
+  if(ukljuci){ buRedovi=[]; buDodajRed(true); } else { buRedovi=[]; document.getElementById('bu-body').innerHTML=''; }
+}
+function buResetUI(){
+  buRedovi=[];
+  const card=document.getElementById('bu-card'); if(card) card.style.display='none';
+  const add=document.getElementById('otp-add-card'); if(add) add.style.display='block';
+  const btn=document.getElementById('bu-toggle-btn'); if(btn) btn.textContent='⚡ Brzi unos (tabela)';
+  const b=document.getElementById('bu-body'); if(b) b.innerHTML='';
+}
+// Pronalazi vozilo po garažnom broju ili registraciji (samo aktivna). Prvo tačno poklapanje garažnog broja,
+// pa tačna registracija, pa registracija koja počinje tim tekstom, pa sadrži.
+function buNadjiVozilo(q){
+  const n=s=>String(s||'').toUpperCase().replace(/[\s\-]/g,'');
+  const qq=n(q); if(!qq) return {v:null,n:0};
+  const akt=S.vozila.filter(jeAktivan);
+  const nivoi=[
+    akt.filter(v=>n(v.garazniBr)===qq),
+    akt.filter(v=>n(v.reg)===qq),
+    akt.filter(v=>{const r=n(v.reg); const jez=n(String(v.reg||'').replace(/\s+[A-Z]\d+(-\d+)?$/i,'')); return jez===qq || r.endsWith(qq) && /^[A-Z]\d+$/.test(qq);}),
+    akt.filter(v=>n(v.reg).startsWith(qq)),
+    akt.filter(v=>n(v.reg).includes(qq)||n(v.garazniBr).includes(qq))
+  ];
+  for(const l of nivoi){ if(l.length) return {v:l[0], n:l.length}; }
+  return {v:null,n:0};
+}
+function buDodajRed(fokus){
+  const r={id:'r'+uid(), q:'', vehId:'', lit:'', mj:'', voz:'', vozRucno:false};
+  buRedovi.push(r);
+  buRender();
+  if(fokus){ const el=document.getElementById('bu-q-'+r.id); if(el) el.focus(); }
+  return r;
+}
+function buObrisiRed(id){
+  buRedovi=buRedovi.filter(r=>r.id!==id);
+  if(!buRedovi.length) buDodajRed(true); else buRender();
+}
+function buRed(id){ return buRedovi.find(r=>r.id===id); }
+function buEsc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;'); }
+function buRender(){
+  const body=document.getElementById('bu-body'); if(!body) return;
+  body.innerHTML=buRedovi.map((r,i)=>`<tr id="bu-tr-${r.id}">
+    <td style="color:var(--mut2);padding-top:12px">${i+1}</td>
+    <td><input class="bu-in" id="bu-q-${r.id}" value="${buEsc(r.q)}" autocomplete="off" placeholder="K112 / reg." oninput="buOnVozilo('${r.id}',this.value)" onkeydown="buKey(event,'${r.id}','q')"><div id="bu-vi-${r.id}"></div></td>
+    <td><input class="bu-in" id="bu-lit-${r.id}" type="number" inputmode="decimal" step=".5" min="0" value="${buEsc(r.lit)}" oninput="buOnPolje('${r.id}','lit',this.value)" onkeydown="buKey(event,'${r.id}','lit')" style="font-weight:800;color:var(--acc)"></td>
+    <td><input class="bu-in" id="bu-mj-${r.id}" type="number" inputmode="decimal" step=".1" min="0" value="${buEsc(r.mj)}" oninput="buOnPolje('${r.id}','mj',this.value)" onkeydown="buKey(event,'${r.id}','mj')"><div id="bu-mi-${r.id}"></div></td>
+    <td><input class="bu-in" id="bu-voz-${r.id}" value="${buEsc(r.voz)}" oninput="buOnPolje('${r.id}','voz',this.value)" onkeydown="buKey(event,'${r.id}','voz')"></td>
+    <td><button type="button" class="btn btn-r" tabindex="-1" onclick="buObrisiRed('${r.id}')">✕</button></td>
+  </tr>`).join('');
+  buOsvjeziProvjere();
+}
+function buOnVozilo(id,val){
+  const r=buRed(id); if(!r) return;
+  r.q=val;
+  const {v}=buNadjiVozilo(val);
+  const staro=r.vehId;
+  r.vehId=v?v.id:'';
+  if(r.vehId!==staro && !r.vozRucno){
+    r.voz=v?(v.vozac||''):'';
+    const vi=document.getElementById('bu-voz-'+id); if(vi) vi.value=r.voz;
+  }
+  buOsvjeziProvjere();
+}
+function buOnPolje(id,polje,val){
+  const r=buRed(id); if(!r) return;
+  r[polje]=val;
+  if(polje==='voz') r.vozRucno=true;
+  buOsvjeziProvjere();
+}
+function buKey(e,id,polje){
+  if(e.key!=='Enter') return;
+  e.preventDefault();
+  const r=buRed(id); if(!r) return;
+  const idx=buRedovi.indexOf(r);
+  const fokus=(pid)=>{ const el=document.getElementById(pid); if(el){ el.focus(); if(el.select) el.select(); } };
+  if(polje==='q'){
+    if(!r.vehId){ toast('⚠ Vozilo nije pronađeno — provjeri garažni broj / registraciju'); return; }
+    const v=gV(r.vehId); r.q=v.reg; document.getElementById('bu-q-'+id).value=v.reg; buOsvjeziProvjere();
+    fokus('bu-lit-'+id);
+  }else if(polje==='lit'){
+    fokus('bu-mj-'+id);
+  }else{ // mj ili voz -> sljedeći red (ili novi ako je ovo zadnji)
+    if(idx<buRedovi.length-1) fokus('bu-q-'+buRedovi[idx+1].id);
+    else buDodajRed(true);
+  }
+}
+// Provjere za svaki red: vozilo pronađeno, km/sati nije manje od zadnjeg, ima li goriva u cisterni (tolerancija 10L)
+function buProvjeri(){
+  const TOL=10;
+  let dost=curOtp?raspolozivoLitara(curOtp.cistijernId):0; // već uključuje stavke dodane običnim unosom
+  const zadnjeURedovima={}; // vehId -> zadnja vrijednost unesena ranije u OVOJ tabeli
+  let uk=0;
+  return buRedovi.map(r=>{
+    const out={r, prazan:!r.q&&!r.lit&&!r.mj, greske:[], upoz:[], info:'', infoMj:''};
+    if(out.prazan) return out;
+    const v=r.vehId?gV(r.vehId):null;
+    if(!v){
+      let poruka=r.q?'Vozilo nije pronađeno':'Upiši vozilo';
+      if(r.q){ const n=x=>String(x||'').toUpperCase().replace(/[\s\-]/g,''); const qq=n(r.q);
+        const neakt=S.vozila.find(x=>!jeAktivan(x)&&(n(x.garazniBr)===qq||n(x.reg)===qq||n(x.reg).startsWith(qq)));
+        if(neakt) poruka=`${neakt.reg} postoji, ali je označeno kao neaktivno (odjavljeno/prodano) — aktiviraj ga u Vozilima ako je tada radilo`; }
+      out.greske.push(poruka);
+    }
+    else{
+      const f=gF(v.firmaId);
+      const {n}=buNadjiVozilo(r.q);
+      out.info=`${v.reg}${v.garazniBr?' ('+v.garazniBr+')':''}${v.model?' · '+v.model:''} · ${f?f.naziv:'?'}${n>1&&normReg(r.q)!==normReg(v.reg)?` · <span style="color:var(--acc2)">+${n-1} sličnih, dopiši tačnije</span>`:''}`;
+    }
+    const lit=parseFloat(r.lit);
+    if(!(lit>0)) out.greske.push('Upiši litre');
+    else{
+      uk+=lit;
+      if(lit>dost+TOL) out.greske.push(`Nema dovoljno goriva (raspoloživo ${dost.toFixed(1)} L)`);
+      else if(lit>dost) out.upoz.push(`Preko stanja za ${(lit-dost).toFixed(1)} L (u toleranciji)`);
+      dost-=lit;
+    }
+    if(v){
+      const isB=koristiMotoSate(v);
+      const jed=isB?'mh':'km';
+      const val=parseFloat(r.mj);
+      const zadnja = zadnjeURedovima[v.id]!=null ? zadnjeURedovima[v.id] : zadnjaKilometraza(v.id,isB);
+      out.infoMj = zadnja!=null?`zadnje: ${zadnja} ${jed}`:`${isB?'moto sati':'km'} · nema ranijeg`;
+      if(isNaN(val)) out.greske.push(`Upiši ${isB?'moto sate':'kilometražu'}`);
+      else{
+        if(zadnja!=null && val<zadnja) out.upoz.push(`Manje od zadnjeg (${zadnja} ${jed})`);
+        zadnjeURedovima[v.id]=val;
+      }
+    }
+    return out;
+  });
+}
+function buOsvjeziProvjere(){
+  const rez=buProvjeri();
+  let uk=0, ok=0;
+  rez.forEach(x=>{
+    const r=x.r;
+    const vi=document.getElementById('bu-vi-'+r.id), mi=document.getElementById('bu-mi-'+r.id);
+    if(!vi||!mi) return;
+    if(x.prazan){ vi.innerHTML=''; mi.innerHTML=''; return; }
+    const lit=parseFloat(r.lit); if(lit>0) uk+=lit;
+    if(!x.greske.length) ok++;
+    vi.innerHTML=(x.info?`<div class="bu-info">${x.info}</div>`:'')+x.greske.map(g=>`<div class="bu-err">⛔ ${g}</div>`).join('')+x.upoz.map(g=>`<div class="bu-wrn">⚠ ${g}</div>`).join('');
+    mi.innerHTML=x.infoMj?`<div class="bu-info">${x.infoMj}</div>`:'';
+  });
+  const el=document.getElementById('bu-ukup');
+  if(el) el.textContent=`${ok} spremno · ${uk} L`;
+}
+async function sacuvajBrziUnos(){
+  if(!curOtp){ toast('⚠ Nema otvorene otpremnice'); return; }
+  const rez=buProvjeri().filter(x=>!x.prazan);
+  if(!rez.length){ toast('⚠ Tabela je prazna'); return; }
+  const lose=rez.filter(x=>x.greske.length);
+  if(lose.length){
+    const i=buRedovi.indexOf(lose[0].r)+1;
+    toast(`⚠ ${lose.length} red(ova) ima grešku (prvi: red ${i} — ${lose[0].greske[0]}). Ispravi ili obriši taj red.`,5000);
+    const el=document.getElementById('bu-q-'+lose[0].r.id); if(el) el.focus();
+    return;
+  }
+  const upoz=rez.filter(x=>x.upoz.length);
+  if(upoz.length){
+    const t=upoz.map(x=>`red ${buRedovi.indexOf(x.r)+1} (${gV(x.r.vehId).reg}): ${x.upoz.join('; ')}`).join('\n');
+    if(!confirm(`Upozorenja:\n\n${t}\n\nSnimiti ipak?`)) return;
+  }
+  // Pretvori redove u stavke — isti oblik kao addStavka()
+  const vrijeme=new Date().toTimeString().slice(0,5);
+  const dodate=[];
+  rez.forEach(x=>{
+    const r=x.r, v=gV(r.vehId), isB=koristiMotoSate(v), val=parseFloat(r.mj), lit=parseFloat(r.lit);
+    const dost=raspolozivoLitara(curOtp.cistijernId);
+    if(lit>dost) logAkcija('Sipanje sa viškom (tolerancija)', `${gC(curOtp.cistijernId)?.reg||'?'}: traženo ${lit}L, raspoloživo bilo ${dost.toFixed(1)}L (unutar tolerancije 10L)`);
+    const s={
+      id:'s'+uid(), kamionId:v.id,
+      vozacIme:String(r.voz||'').trim(),
+      km:isB?null:val, motoSati:isB?val:null,
+      litara:lit, sig:null, vrijeme,
+      izvorUlaza:fifoAlociraj(curOtp.cistijernId,lit),
+      regSnap:v.reg, modelSnap:v.model||'', firmaIdSnap:v.firmaId||'', tipSnap:v.tip||'kamion',
+      papirniUnos:true
+    };
+    curOtp.stavke.push(s); dodate.push(s);
+  });
+  let uspjelo=false;
+  try{
+    await zatvoriOtpBezDuplikata();
+    uspjelo=true;
+  }catch(e){
+    // Vrati stavke nazad u tabelu stanje (izbaci ih iz curOtp da se ne dupliraju pri ponovnom pokušaju)
+    curOtp.stavke=curOtp.stavke.filter(s=>!dodate.includes(s));
+    toast('⚠ '+e.message+' — ništa nije izgubljeno, klikni ponovo "Sačuvaj sve".',6000);
+    return;
+  }
+  if(uspjelo){
+    logAkcija('Brzi unos (papirni)', `${dodate.length} stavki, ${dodate.reduce((a,s)=>a+s.litara,0)} L`);
+    // Kao i ranije: ako je vozač promijenjen u odnosu na bazu, ponudi ažuriranje (jednom po vozilu)
+    const vidjeno=new Set();
+    for(const s of dodate){
+      if(vidjeno.has(s.kamionId)) continue; vidjeno.add(s.kamionId);
+      await ponudiAzuriranjeVozaca(s.kamionId, s.vozacIme);
+    }
+  }
+}
+// Kao zatvoriOtp(), ali ID dokumenta se odredi UNAPRIJED i pamti — ako snimanje "istekne" (12s) a u pozadini
+// ipak prođe, ponovni klik piše u ISTI dokument umjesto da napravi duplikat.
+async function zatvoriOtpBezDuplikata(){
+  if(!curOtp||!curOtp.stavke.length) throw new Error('Nema stavki');
+  const grupe={};
+  curOtp.stavke.forEach(s=>{ const fid=stavkaVehInfo(s).firmaId||'_bezfirme'; (grupe[fid]=grupe[fid]||[]).push(s); });
+  curOtp._docIds=curOtp._docIds||{};
+  curOtp._brojevi=curOtp._brojevi||{};
+  const fidKeys=Object.keys(grupe);
+  const saved=[];
+  for(let i=0;i<fidKeys.length;i++){
+    const fid=fidKeys[i];
+    if(!curOtp._brojevi[fid]) curOtp._brojevi[fid] = i===0 ? curOtp.brojOtp : autoBroj('OTP');
+    if(!curOtp._docIds[fid]) curOtp._docIds[fid] = window.FB.newDocId('otpremnice');
+    const id=curOtp._docIds[fid];
+    const podaci={datum:curOtp.datum, brojOtp:curOtp._brojevi[fid], cistijernId:curOtp.cistijernId, gradId:curOtp.gradId, gorivo:curOtp.gorivo, stavke:grupe[fid]};
+    await window.FB.setDoc(window.FB.docRef('otpremnice',id),podaci);
+    saved.push({id,...podaci});
+  }
+  saved.forEach(s=>{ const ix=S.otpremnice.findIndex(x=>x.id===s.id); if(ix>=0) S.otpremnice[ix]=s; else S.otpremnice.push(s); });
+  resetOtpForm();
+  renderDanas();
+  if(fidKeys.length>1){
+    const nazivi=fidKeys.map(fid=>fid==='_bezfirme'?'bez firme':((S.firme.find(x=>x.id===fid)||{}).naziv||'?'));
+    toast(`✓ Sačuvano i podijeljeno na ${saved.length} otpremnice (${nazivi.join(', ')}). Ostale su u "Danas" listi za štampu.`,6000);
+  }else toast('✓ Otpremnica sačuvana!');
+  printOtp(saved[0].id, saved[0]);
+}
 function odustaniOtp(){if(!confirm('Odustati?'))return;resetOtpForm();}
 function resetOtpForm(){
   curOtp=null;curVehId='';
@@ -2027,6 +2299,7 @@ function resetOtpForm(){
   document.getElementById('otp-active').style.display='none';
   document.getElementById('otp-broj').value='';
   document.getElementById('entry-form').style.display='none';
+  if(typeof buResetUI==='function') buResetUI();
 }
 
 // ═══ DASHBOARD - trošak goriva sa brzim periodima ═══
