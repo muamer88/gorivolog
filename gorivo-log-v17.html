@@ -3662,13 +3662,30 @@ function regoviSeOdgovaraju(regA, regB){
 // Da li se stavka mjeri u moto-satima. PRIORITET: trenutna ručna ispravka (mjeriloTip) na vozilu u bazi
 // (ako vozilo još postoji, po ID-ju ili registraciji) - to je NAMJERNA admin ispravka, treba da vrijedi
 // za SVE stavke tog vozila, uključujući stare. Tek ako nema takve ispravke, koristi zamrznut/uživo tip.
-function stavkaJeMotoSati(s){
+// Trenutno vozilo iz baze za stavku: po ID-u, a ako tog ID-a više nema (vozila obrisana i ponovo uvezena),
+// po registraciji (isto pravilo kao Arhiva - bez miješanja B5/B57). null ako vozilo više ne postoji.
+function vozZaStavku(s){
   let v=gV(s.kamionId);
   if(!v){
     const vi=stavkaVehInfo(s);
     if(vi.reg) v=S.vozila.find(x=>regoviSeOdgovaraju(x.reg,vi.reg));
   }
-  if(v && v.mjeriloTip) return v.mjeriloTip==='sati';
+  return v||null;
+}
+// Tip vozila za izvještaje: TRENUTNA baza vozila ima prednost (admin ispravke važe i za stare stavke);
+// zapamćeni tip samo ako vozilo više ne postoji.
+function stavkaTip(s){
+  const v=vozZaStavku(s);
+  return v ? (v.tip||'kamion') : stavkaVehInfo(s).tip;
+}
+// Ključ za grupisanje po vozilu - isto vozilo i kad je imalo stari ID
+function stavkaVoziloKljuc(s){
+  const v=vozZaStavku(s);
+  return v ? v.id : ('reg:'+normReg(stavkaVehInfo(s).reg));
+}
+function stavkaJeMotoSati(s){
+  const v=vozZaStavku(s);
+  if(v) return koristiMotoSate(v); // mjeriloTip ako je ručno postavljen, inače tip iz trenutne baze
   return koristiMotoSate({tip:stavkaVehInfo(s).tip});
 }
 function stavkaProladiFilter(s){
@@ -3782,9 +3799,9 @@ function renderIzv(){
   // Po tipu
   const tm={};
   all.forEach(o=>o.stavke.forEach(s=>{
-    const t=stavkaVehInfo(s).tip;
+    const t=stavkaTip(s);
     if(!tm[t])tm[t]={lit:0,br:0,vz:new Set()};
-    tm[t].lit+=s.litara;tm[t].br++;tm[t].vz.add(s.kamionId);
+    tm[t].lit+=s.litara;tm[t].br++;tm[t].vz.add(stavkaVoziloKljuc(s));
   }));
   document.getElementById('rep-t').innerHTML=Object.entries(tm).sort((a,b)=>b[1].lit-a[1].lit).map(([t,d])=>`<tr><td>${tipL(t)}</td><td>${d.vz.size}</td><td>${d.br}</td><td><span class="tag t-l">${d.lit.toLocaleString()} L</span></td></tr>`).join('')||'<tr><td colspan="4" style="text-align:center;color:var(--mut2)">Nema podataka</td></tr>';
 
@@ -3953,10 +3970,11 @@ function exportPivotExcel(){
     const vi=stavkaVehInfo(s);
     const isB=stavkaJeMotoSati(s);
     const val=isB?(s.motoSati!=null?s.motoSati:s.motoSatiK):(s.km!=null?s.km:s.kmKraj);
-    if(!pv[s.kamionId]) pv[s.kamionId]={ukLit:0,ukKM:0,br:0,unosi:[],isB,vi};
-    pv[s.kamionId].ukLit+=s.litara; pv[s.kamionId].br++;
-    pv[s.kamionId].ukKM+=izracunajTrosakStavke(s);
-    if(val!=null) pv[s.kamionId].unosi.push({val,lit:s.litara});
+    const k=stavkaVoziloKljuc(s);
+    if(!pv[k]) pv[k]={ukLit:0,ukKM:0,br:0,unosi:[],isB,vi:{...vi,tip:stavkaTip(s)}};
+    pv[k].ukLit+=s.litara; pv[k].br++;
+    pv[k].ukKM+=izracunajTrosakStavke(s);
+    if(val!=null) pv[k].unosi.push({val,lit:s.litara});
   }));
   const rows=[['Registracija','Model','Firma','Tip','Broj točenja','Ukupno litara','Trošak (KM)','Pređeno (km/mh)','Prosjek (L/100km ili L/mh)','Napomena']];
   Object.values(pv).sort((a,b)=>b.ukLit-a.ukLit).forEach(r=>{
