@@ -2354,7 +2354,7 @@ function renderDashboard(){
   const litDanas=otpDanas.reduce((a,o)=>a+o.stavke.reduce((b,s)=>b+s.litara,0),0)+otp3Danas.reduce((a,o)=>a+o.stavke.reduce((b,s)=>b+s.litara,0),0);
   const brDanas=otpDanas.length+otp3Danas.length;
   const vozilaDanas=new Set();
-  otpDanas.forEach(o=>o.stavke.forEach(s=>vozilaDanas.add(s.kamionId)));
+  otpDanas.forEach(o=>o.stavke.forEach(s=>vozilaDanas.add(stavkaVoziloKljuc(s))));
   const kritCist=S.cistijerne.filter(c=>semaforCisterne(c).boja==='warn').length;
   document.getElementById('dash-stats').innerHTML=`
     <div class="stat"><div class="stat-n">${brDanas}</div><div class="stat-l">Otpremnica danas</div></div>
@@ -3817,10 +3817,11 @@ function renderPotrosnjaPoVozilu(all){
     const vi=stavkaVehInfo(s);
     const isB=stavkaJeMotoSati(s);
     const val=isB?(s.motoSati!=null?s.motoSati:s.motoSatiK):(s.km!=null?s.km:s.kmKraj);
-    if(!pv[s.kamionId]) pv[s.kamionId]={ukLit:0,ukKM:0,unosi:[],isB,vi};
-    pv[s.kamionId].ukLit+=s.litara;
-    pv[s.kamionId].ukKM+=izracunajTrosakStavke(s);
-    if(val!=null) pv[s.kamionId].unosi.push({val,lit:s.litara});
+    const k=stavkaVoziloKljuc(s); // isto vozilo i kad je sipanje uneseno pod starim ID-em
+    if(!pv[k]) pv[k]={ukLit:0,ukKM:0,unosi:[],isB,vi:{...vi,tip:stavkaTip(s)}};
+    pv[k].ukLit+=s.litara;
+    pv[k].ukKM+=izracunajTrosakStavke(s);
+    if(val!=null) pv[k].unosi.push({val,lit:s.litara});
   }));
   const rows=Object.values(pv).sort((a,b)=>b.ukLit-a.ukLit);
   document.getElementById('rep-potrosnja').innerHTML=rows.map(r=>{
@@ -3928,12 +3929,12 @@ function renderGrafikoni(){
 
   // 3) Top 5 vozila po potrošnji (ukupno, svo vrijeme)
   const pv={};
-  S.otpremnice.filter(o=>!o.stornirano).forEach(o=>o.stavke.forEach(s=>{pv[s.kamionId]=(pv[s.kamionId]||0)+s.litara;}));
+  S.otpremnice.filter(o=>!o.stornirano).forEach(o=>o.stavke.forEach(s=>{const k=stavkaVoziloKljuc(s);pv[k]=(pv[k]||0)+s.litara;}));
   const top5=Object.entries(pv).sort((a,b)=>b[1]-a[1]).slice(0,5);
   if(chartTop) chartTop.destroy();
   chartTop=new Chart(document.getElementById('chart-top'), {
     type:'bar',
-    data:{labels:top5.map(([vid])=>{const v=gV(vid);return v?v.reg:(S.otpremnice.flatMap(o=>o.stavke).find(s=>s.kamionId===vid&&s.regSnap)||{}).regSnap||'?';}), datasets:[{label:'Litara',data:top5.map(([,l])=>l),backgroundColor:'#f0a020'}]},
+    data:{labels:top5.map(([vid])=>{const v=gV(vid);return v?v.reg:(String(vid).startsWith('reg:')?String(vid).slice(4):'?');}), datasets:[{label:'Litara',data:top5.map(([,l])=>l),backgroundColor:'#f0a020'}]},
     options:{indexAxis:'y',plugins:{legend:{display:false}},scales:{x:{beginAtZero:true,ticks:{color:'#8a8f8a'}},y:{ticks:{color:'#8a8f8a'}}}}
   });
 }
