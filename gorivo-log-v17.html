@@ -757,12 +757,14 @@ try{
   <div class="card admin-only">
     <div class="card-title">📋 Ulazi</div>
     <div class="fil" style="margin-bottom:12px">
-      <input type="text" id="ul-fil-q" placeholder="Faktura, otpremnica, dobavljač..." oninput="renderUl()" style="min-width:200px">
+      <input type="text" id="ul-fil-q" placeholder="Faktura, otpremnica, dobavljač, napomena..." oninput="renderUl()" style="min-width:200px">
       <input type="date" id="ul-fil-od" onchange="renderUl()">
       <input type="date" id="ul-fil-do" onchange="renderUl()">
       <button class="btn btn-s" onclick="ulFilPeriod('sedmica')">Ova sedmica</button>
       <button class="btn btn-s" onclick="ulFilPeriod('mjesec')">Ovaj mjesec</button>
       <button class="btn btn-s" onclick="ulFilReset()">✕ Očisti</button>
+      <button class="btn btn-s" onclick="exportUlaziExcel()">⬇ Excel</button>
+      <button class="btn btn-s" onclick="stampajUlazi()">🖨 PDF</button>
     </div>
     <div id="ul-sazetak" style="margin-bottom:10px"></div>
     <div id="lst-ul"><div class="empty">Nema unosa</div></div>
@@ -2954,20 +2956,25 @@ function ulFilReset(){
   document.getElementById('ul-fil-do').value='';
   renderUl();
 }
+// Lista ulaza po trenutnom filteru (pretraga + period) - koristi je i tabela i izvoz u Excel/PDF
+function ulFiltriranaLista(){
+  const q=(document.getElementById('ul-fil-q')?.value||'').trim().toLowerCase();
+  const od=document.getElementById('ul-fil-od')?.value||'', do_=document.getElementById('ul-fil-do')?.value||'';
+  let lista=[...S.ulazi].sort((a,b)=>(a.datum||'').localeCompare(b.datum||''));
+  return lista.filter(u=>{
+    const dDatum=(u.datum||'').split('T')[0];
+    if(od && dDatum<od) return false;
+    if(do_ && dDatum>do_) return false;
+    if(q && !((u.brFakture||'').toLowerCase().includes(q) || (u.brDob||'').toLowerCase().includes(q) || (u.dobav||'').toLowerCase().includes(q) || (u.nap||'').toLowerCase().includes(q))) return false;
+    return true;
+  });
+}
+function ulEsc(t){ return String(t==null?'':t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 function renderUl(){
   const el=document.getElementById('lst-ul');
   if(!S.ulazi.length){el.innerHTML='<div class="empty">Nema unosa</div>';return;}
   const potroseno=potrosenoPoSerijamaKrajnje();
-  const q=(document.getElementById('ul-fil-q')?.value||'').trim().toLowerCase();
-  const od=document.getElementById('ul-fil-od')?.value||'', do_=document.getElementById('ul-fil-do')?.value||'';
-  let lista=[...S.ulazi].sort((a,b)=>(a.datum||'').localeCompare(b.datum||''));
-  lista=lista.filter(u=>{
-    const dDatum=(u.datum||'').split('T')[0];
-    if(od && dDatum<od) return false;
-    if(do_ && dDatum>do_) return false;
-    if(q && !((u.brFakture||'').toLowerCase().includes(q) || (u.brDob||'').toLowerCase().includes(q) || (u.dobav||'').toLowerCase().includes(q))) return false;
-    return true;
-  });
+  const lista=ulFiltriranaLista();
   if(!lista.length){el.innerHTML='<div class="empty">Nema rezultata za ovaj filter</div>';document.getElementById('ul-sazetak').innerHTML='';return;}
   // Sažetak - samo stvarne kupovine (ne korekcije), poštuje trenutni filter
   const kupovine=lista.filter(u=>u.dobav!=='KOREKCIJA' && u.litara>0);
@@ -2975,14 +2982,80 @@ function renderUl(){
   const ukIznosBezPdv=kupovine.reduce((a,u)=>a+(u.cijenaLitra?u.litara*u.cijenaLitra:0),0);
   const brezCijene=kupovine.filter(u=>!u.cijenaLitra).length;
   document.getElementById('ul-sazetak').innerHTML=`<div class="signal sig-info">📊 Ukupno (za ovaj filter): <b>${ukLit.toLocaleString()} L</b> kupljeno · <b>${ukIznosBezPdv.toFixed(2)} KM</b> bez PDV (<b>${(ukIznosBezPdv*1.17).toFixed(2)} KM</b> sa PDV)${brezCijene?` · <span style="color:var(--acc2)">⚠ ${brezCijene} bez unesene cijene (nije uračunato)</span>`:''}</div>`;
-  el.innerHTML='<div class="tw"><table><thead><tr><th>Datum</th><th>Cisterna</th><th>Dobavljač</th><th>Litara</th><th class="admin-only">Faktura</th><th>Preostalo</th><th></th></tr></thead><tbody>'+
+  el.innerHTML='<div class="tw"><table><thead><tr><th>Datum</th><th>Cisterna</th><th>Dobavljač</th><th class="admin-only">Faktura</th><th class="admin-only">Otpremnica</th><th>Litara</th><th class="admin-only">Cijena sa PDV</th><th class="admin-only">Iznos sa PDV</th><th>Preostalo</th><th>Napomena</th><th></th></tr></thead><tbody>'+
     lista.map(u=>{
       const c=gC(u.cistijernId);const isKor=u.dobav==='KOREKCIJA';
       const preostalo=isKor?null:u.litara-(potroseno[u.id]||0);
       const potroseniPct=isKor?0:Math.round(100*((potroseno[u.id]||0)/u.litara));
       const iznosBezPdv = u.cijenaLitra ? u.litara*u.cijenaLitra : 0;
-      return`<tr><td class="mono">${(u.datum||'').replace('T',' ')}</td><td><span class="tag t-ok">${c?c.reg:'?'}</span></td><td>${isKor?`<span class="tag t-warn">⚖ ${u.nap||'korekcija'}</span>`:(u.dobav||'—')}</td><td><span class="tag t-l">${u.litara>0?'+':''}${u.litara}L</span></td><td class="admin-only" style="font-size:10.5px;white-space:nowrap">${u.brFakture?u.brFakture:'—'}${u.cijenaLitra?` · ${u.cijenaLitra} KM/L (${(u.cijenaLitra*1.17).toFixed(3)} sa PDV) · <b style="color:var(--acc)">${iznosBezPdv.toFixed(2)} KM</b> <span style="color:var(--mut2)">(${(iznosBezPdv*1.17).toFixed(2)} sa PDV)</span>`:''}</td><td>${isKor?'—':`<span class="tag ${preostalo<=0?'t-warn':'t-ok'}">${preostalo.toFixed(0)}L (${100-potroseniPct}%)</span>`}</td><td style="white-space:nowrap">${isKor?'':`<button class="btn btn-s" style="padding:3px 8px;font-size:11px" onclick="prikaziPotrosnjuSerije('${u.id}')">👁</button> `}<button class="btn btn-s" style="padding:3px 8px;font-size:11px" onclick="editUl('${u.id}')">✎</button> <button class="btn btn-r" style="padding:3px 8px;font-size:11px" onclick="deleteUl('${u.id}')">✕</button></td></tr>`;
+      const nap=u.nap||'';
+      const napKratko=nap.length>40?nap.slice(0,40)+'…':nap;
+      return`<tr><td class="mono" style="white-space:nowrap">${(u.datum||'').replace('T',' ')}</td><td><span class="tag t-ok">${c?c.reg:'?'}</span></td><td>${isKor?`<span class="tag t-warn">⚖ Korekcija</span>`:ulEsc(u.dobav||'—')}</td><td class="admin-only mono" style="font-size:11.5px;white-space:nowrap;color:var(--acc2)">${ulEsc(u.brFakture||'—')}</td><td class="admin-only mono" style="font-size:11.5px;white-space:nowrap;color:var(--mut2)">${ulEsc(u.brDob||'—')}</td><td><span class="tag t-l">${u.litara>0?'+':''}${u.litara}L</span></td><td class="admin-only mono" style="font-size:11.5px;white-space:nowrap">${u.cijenaLitra?(u.cijenaLitra*1.17).toFixed(3)+' KM/L':'—'}</td><td class="admin-only mono" style="font-size:11.5px;white-space:nowrap">${u.cijenaLitra?`<b style="color:var(--acc)">${(iznosBezPdv*1.17).toFixed(2)} KM</b>`:'—'}</td><td>${isKor?'—':`<span class="tag ${preostalo<=0?'t-warn':'t-ok'}">${preostalo.toFixed(0)}L (${100-potroseniPct}%)</span>`}</td><td style="font-size:11.5px;max-width:220px;color:var(--mut2)" title="${ulEsc(nap)}">${nap?ulEsc(napKratko):'—'}</td><td style="white-space:nowrap">${isKor?'':`<button class="btn btn-s" style="padding:3px 8px;font-size:11px" onclick="prikaziPotrosnjuSerije('${u.id}')">👁</button> `}<button class="btn btn-s" style="padding:3px 8px;font-size:11px" onclick="editUl('${u.id}')">✎</button> <button class="btn btn-r" style="padding:3px 8px;font-size:11px" onclick="deleteUl('${u.id}')">✕</button></td></tr>`;
     }).join('')+'</tbody></table></div>';
+}
+// Redovi za izvoz ulaza (Excel i PDF) - isti filter kao tabela na ekranu
+function ulaziZaIzvoz(){
+  const potroseno=potrosenoPoSerijamaKrajnje();
+  const lista=ulFiltriranaLista();
+  const redovi=lista.map(u=>{
+    const c=gC(u.cistijernId);const isKor=u.dobav==='KOREKCIJA';
+    const cij=u.cijenaLitra||0;
+    const bez=cij?+(u.litara*cij).toFixed(2):null;
+    const sa=cij?+(u.litara*cij*1.17).toFixed(2):null;
+    return {
+      datum:(u.datum||'').replace('T',' '), cisterna:c?c.reg:'?', dobav:isKor?'KOREKCIJA':(u.dobav||''),
+      brDob:u.brDob||'', brFakture:u.brFakture||'', litara:u.litara,
+      cijBez:cij?+cij.toFixed(3):null, cijSa:cij?+(cij*1.17).toFixed(3):null,
+      bez, pdv:cij?+(sa-bez).toFixed(2):null, sa,
+      preostalo:isKor?null:+(u.litara-(potroseno[u.id]||0)).toFixed(1), nap:u.nap||'', isKor
+    };
+  });
+  const kup=redovi.filter(r=>!r.isKor && r.litara>0);
+  const uk={litara:kup.reduce((a,r)=>a+r.litara,0), bez:+kup.reduce((a,r)=>a+(r.bez||0),0).toFixed(2), sa:+kup.reduce((a,r)=>a+(r.sa||0),0).toFixed(2), bezCijene:kup.filter(r=>r.bez==null).length};
+  uk.pdv=+(uk.sa-uk.bez).toFixed(2);
+  const od=document.getElementById('ul-fil-od')?.value||'', do_=document.getElementById('ul-fil-do')?.value||'';
+  const q=(document.getElementById('ul-fil-q')?.value||'').trim();
+  const opisFiltera=[od||do_?`Period: ${od||'…'} – ${do_||'…'}`:'Period: sve', q?`Pretraga: "${q}"`:''].filter(Boolean).join(' · ');
+  return {redovi, uk, opisFiltera};
+}
+function exportUlaziExcel(){
+  if(typeof XLSX==='undefined'){toast('⚠ Učitava se Excel biblioteka, pokušaj za sekundu...',3000);return;}
+  const {redovi,uk,opisFiltera}=ulaziZaIzvoz();
+  if(!redovi.length){toast('⚠ Nema ulaza za ovaj filter.');return;}
+  const rows=[['Ulazi goriva — '+opisFiltera],[],
+    ['Datum','Cisterna','Dobavljač','Br. otpremnice dobavljača','Br. fakture','Litara','Cijena/L bez PDV','Cijena/L sa PDV','Iznos bez PDV','PDV (17%)','Iznos sa PDV','Preostalo (L)','Napomena']];
+  redovi.forEach(r=>rows.push([r.datum,r.cisterna,r.dobav,r.brDob,r.brFakture,r.litara,r.cijBez??'',r.cijSa??'',r.bez??'',r.pdv??'',r.sa??'',r.preostalo??'',r.nap]));
+  rows.push([]);
+  rows.push(['UKUPNO (kupovine)','','','','',uk.litara,'','',uk.bez,uk.pdv,uk.sa,'',uk.bezCijene?`${uk.bezCijene} ulaz(a) bez cijene — nije uračunato u iznos`:'']);
+  const ws=XLSX.utils.aoa_to_sheet(rows);
+  ws['!cols']=[{wch:17},{wch:14},{wch:16},{wch:20},{wch:14},{wch:10},{wch:12},{wch:12},{wch:13},{wch:11},{wch:13},{wch:12},{wch:40}];
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,ws,'Ulazi');
+  XLSX.writeFile(wb,`ulazi_goriva_${today()}.xlsx`);
+  toast('✓ Excel preuzet!');
+}
+function stampajUlazi(){
+  const {redovi,uk,opisFiltera}=ulaziZaIzvoz();
+  if(!redovi.length){toast('⚠ Nema ulaza za ovaj filter.');return;}
+  const f=n=>n==null||n===''?'—':Number(n).toLocaleString('bs-BA',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const f3=n=>n==null?'—':Number(n).toFixed(3);
+  const mf=S.mojaFirma||{};
+  const html=`<!doctype html><html><head><meta charset="utf-8"><title>Ulazi goriva ${today()}</title>
+<style>@page{size:A4 landscape;margin:10mm}body{font-family:Arial,sans-serif;font-size:10px;color:#000;margin:0}
+h1{font-size:15px;margin:0 0 2px}.sub{color:#555;margin-bottom:8px}table{width:100%;border-collapse:collapse}
+th,td{border:1px solid #999;padding:3px 4px;vertical-align:top}th{background:#eee;font-size:9px;text-align:left}
+td.n{text-align:right;white-space:nowrap}tr.uk td{font-weight:bold;background:#f3f3f3}td.nap{max-width:180px}
+.nop{margin:10px 0}@media print{.nop{display:none}}</style></head><body>
+<div class="nop"><button onclick="window.print()" style="padding:8px 16px;font-size:14px">🖨 Štampaj / Sačuvaj kao PDF</button></div>
+<h1>Ulazi goriva${mf.naziv?' — '+ulEsc(mf.naziv):''}</h1><div class="sub">${ulEsc(opisFiltera)} · štampano ${new Date().toLocaleString('bs-BA')}</div>
+<table><thead><tr><th>Datum</th><th>Cisterna</th><th>Dobavljač</th><th>Br. otpremnice</th><th>Br. fakture</th><th>Litara</th><th>Cijena/L bez PDV</th><th>Cijena/L sa PDV</th><th>Iznos bez PDV</th><th>PDV</th><th>Iznos sa PDV</th><th>Preostalo</th><th>Napomena</th></tr></thead><tbody>
+${redovi.map(r=>`<tr><td style="white-space:nowrap">${ulEsc(r.datum)}</td><td>${ulEsc(r.cisterna)}</td><td>${ulEsc(r.dobav)}</td><td>${ulEsc(r.brDob||'—')}</td><td>${ulEsc(r.brFakture||'—')}</td><td class="n">${r.litara.toLocaleString('bs-BA')}</td><td class="n">${f3(r.cijBez)}</td><td class="n">${f3(r.cijSa)}</td><td class="n">${f(r.bez)}</td><td class="n">${f(r.pdv)}</td><td class="n">${f(r.sa)}</td><td class="n">${r.preostalo==null?'—':r.preostalo.toLocaleString('bs-BA')}</td><td class="nap">${ulEsc(r.nap)}</td></tr>`).join('')}
+<tr class="uk"><td colspan="5">UKUPNO (kupovine)${uk.bezCijene?` — ${uk.bezCijene} bez cijene, nije uračunato u iznos`:''}</td><td class="n">${uk.litara.toLocaleString('bs-BA')}</td><td></td><td></td><td class="n">${f(uk.bez)}</td><td class="n">${f(uk.pdv)}</td><td class="n">${f(uk.sa)}</td><td></td><td></td></tr>
+</tbody></table></body></html>`;
+  const w=window.open('','_blank');
+  if(!w){toast('⚠ Browser je blokirao novi prozor — dozvoli pop-up za ovu stranicu pa probaj ponovo.',5000);return;}
+  w.document.open(); w.document.write(html); w.document.close();
+  setTimeout(()=>{ try{ w.focus(); w.print(); }catch(e){} },400);
 }
 
 // Prati SVE što se desilo sa datom serijom/transferom - rekurzivno, kroz eventualne dalje transfere,
