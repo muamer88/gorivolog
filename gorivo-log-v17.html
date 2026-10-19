@@ -456,6 +456,7 @@ try{
 
   <nav id="main-nav" class="admin-only">
     <button class="nav-btn active" onclick="showTab('dashboard',this)">🏠 Dashboard</button>
+    <button class="nav-btn" onclick="showTab('ture',this)">🚛 Ture</button>
     <button class="nav-btn" onclick="showTab('tocenje',this)">📋 Točenje</button>
     <button class="nav-btn" onclick="showTab('treca',this)">🏢 Treća lica</button>
     <button class="nav-btn" onclick="showTab('transfer',this)">🔄 Transfer</button>
@@ -868,6 +869,17 @@ try{
     <div class="tw"><table><thead><tr><th>Datum</th><th>Broj</th><th>Firma</th><th>Cisterna</th><th>Vozila</th><th>Litara</th></tr></thead><tbody id="rep-treca"></tbody></table></div>
   </div>
   <div class="card">
+    <div class="card-title">🚛 Ture — pregled za period</div>
+    <div class="signal sig-tip">Ture su odvojene od goriva — ovaj pregled koristi samo datum "Od/Do" gore, ne i filtere za gorivo.</div>
+    <div class="grid2" style="gap:14px">
+      <div><div style="font-size:12px;color:var(--mut2);margin-bottom:6px">Po vozilu</div><div class="tw"><table><thead><tr><th>Vozilo</th><th>Tura</th><th>m³</th><th>t</th></tr></thead><tbody id="rep-ture-voz"></tbody></table></div></div>
+      <div><div style="font-size:12px;color:var(--mut2);margin-bottom:6px">Po lokaciji istovara</div><div class="tw"><table><thead><tr><th>Lokacija</th><th>Tura</th><th>m³</th><th>t</th></tr></thead><tbody id="rep-ture-lok"></tbody></table></div></div>
+    </div>
+    <div style="margin-top:12px"><div style="font-size:12px;color:var(--mut2);margin-bottom:6px">Za fakturisanje — po ugovorenoj firmi</div>
+      <div class="tw"><table><thead><tr><th>Firma</th><th>Tura</th><th>m³</th><th>t</th></tr></thead><tbody id="rep-ture-firma"></tbody></table></div>
+    </div>
+  </div>
+  <div class="card">
     <div class="card-title">📊 Ulaz goriva po sedmicama</div>
     <canvas id="chart-nedeljno" height="90"></canvas>
   </div>
@@ -878,6 +890,75 @@ try{
   <div class="card">
     <div class="card-title">🏆 Top 5 vozila po potrošnji</div>
     <canvas id="chart-top" height="110"></canvas>
+  </div>
+</div>
+
+<!-- ═══ TAB: TURE (evidencija tura kamiona — ODVOJENO od goriva) ═══ -->
+<div class="tab" id="tab-ture">
+  <div class="card">
+    <div class="card-title">🚛 Unos tura (s papira)</div>
+    <div class="signal sig-tip">Prvo izaberi datum i vozilo — ostaju upamćeni dok unosiš ture jednu za drugom. Nakon svake sačuvane ture ostaje samo da upišeš novu relaciju.</div>
+    <div class="grid4">
+      <div class="fg" style="grid-column:1/3"><label>Datum</label><input type="date" id="tu-dat" onchange="renderTureDana()"></div>
+      <div class="fg" style="grid-column:3/5"><label>Vozilo</label><select id="tu-voz" onchange="tuVoziloPromijenjeno()"><option value="">— izaberi vozilo —</option></select></div>
+      <div class="fg" style="grid-column:1/3"><label>Vozač</label><input id="tu-vozac" placeholder="Ime vozača"></div>
+      <div class="fg" style="grid-column:3/5"><label>Broj putnog naloga (PN3)</label><input id="tu-pn" placeholder="npr. 001234"></div>
+    </div>
+    <div style="border-top:1px solid var(--bord);margin:12px 0 10px"></div>
+    <div class="grid4">
+      <div class="fg" style="grid-column:1/3"><label>Odakle (utovar)</label><select id="tu-od"><option value="">— izaberi —</option></select></div>
+      <div class="fg" style="grid-column:3/5"><label>Dokle (istovar)</label><select id="tu-do"><option value="">— izaberi —</option></select></div>
+      <div class="fg" style="grid-column:1/3"><label>Materijal</label><input id="tu-mat" placeholder="npr. tampon 0-63, zemlja iz iskopa"></div>
+      <div class="fg"><label>Količina</label><input type="number" id="tu-kol" min="0" step=".01" placeholder="12"></div>
+      <div class="fg"><label>Jedinica</label><select id="tu-jed"><option value="m3">m³</option><option value="t">t</option></select></div>
+      <div class="fg" style="grid-column:1/3"><label>Porijeklo materijala</label><select id="tu-por">
+        <option value="kupljeni">Kupljeni / iz kamenoloma</option>
+        <option value="iskop">Iz iskopa — ide na deponiju</option>
+        <option value="deponija">Vlastiti s deponije (cijena 0)</option>
+      </select></div>
+      <div class="fg" style="grid-column:3/5"><label>Za koga je tura</label><select id="tu-zakoga" onchange="tuZaKogaPromijenjeno()">
+        <option value="nase">Naše gradilište</option>
+        <option value="firma">Ugovorena firma</option>
+        <option value="privatno">Privatno — ustupanje materijala</option>
+      </select></div>
+      <div class="fg" style="grid-column:1/3;display:none" id="tu-wrap-firma"><label>Firma</label><select id="tu-firma"><option value="">— izaberi firmu —</option></select></div>
+      <div class="fg" style="grid-column:1/3;display:none" id="tu-wrap-privatno"><label>Ime vlasnika / parcele</label><input id="tu-privatno" placeholder="npr. Hasan Hasanović, Vlakovo"></div>
+      <div class="fg"><label>Br. otpremnice</label><input id="tu-brotp" placeholder="105"></div>
+      <div class="fg"><label>Način mjerenja</label><select id="tu-mjer">
+        <option value="procjena">Procjena po kamionu</option>
+        <option value="vaga">Vaga</option>
+        <option value="premjer">Geodetski premjer</option>
+      </select></div>
+      <div class="fg" style="grid-column:1/5"><label>Napomena</label><input id="tu-nap" placeholder="Opcionalno..."></div>
+    </div>
+    <button class="btn btn-o" onclick="guardedClick(this,spremiTuru)" id="tu-btn">✓ Sačuvaj turu i nastavi</button>
+    <button class="btn btn-s" onclick="ocistiTuruFormu()" style="margin-left:8px">✕ Očisti polja ture</button>
+  </div>
+
+  <div class="card">
+    <div class="card-title">📋 Ture tog dana i vozila</div>
+    <div id="tu-dana"><div class="empty">Izaberi datum i vozilo gore.</div></div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">🔎 Sve ture</div>
+    <div class="fil" style="margin-bottom:12px">
+      <input type="date" id="tu-fil-od" onchange="renderTureLista()">
+      <input type="date" id="tu-fil-do" onchange="renderTureLista()">
+      <select id="tu-fil-voz" onchange="renderTureLista()"><option value="">— sva vozila —</option></select>
+      <select id="tu-fil-zakoga" onchange="renderTureLista()">
+        <option value="">— svi —</option>
+        <option value="nase">Naše gradilište</option>
+        <option value="firma">Ugovorena firma</option>
+        <option value="privatno">Privatno</option>
+      </select>
+      <input type="text" id="tu-fil-q" placeholder="Materijal, otpremnica, napomena..." oninput="renderTureLista()" style="min-width:180px">
+      <button class="btn btn-s" onclick="tuFilPeriod('mjesec')">Ovaj mjesec</button>
+      <button class="btn btn-s" onclick="tuFilReset()">✕ Očisti</button>
+      <button class="btn btn-s" onclick="exportTureExcel()">⬇ Excel</button>
+    </div>
+    <div id="tu-sazetak" style="margin-bottom:10px"></div>
+    <div class="tw" id="tbl-ture"><div class="empty">Nema unesenih tura</div></div>
   </div>
 </div>
 
@@ -997,9 +1078,17 @@ try{
       <div style="margin-top:12px" id="lst-f"></div>
     </div>
     <div class="card">
-      <div class="card-title">📍 Gradilišta</div>
+      <div class="card-title">📍 Gradilišta i lokacije</div>
+      <div class="signal sig-tip">Ovdje su i lokacije za ture: deponije, kamenolomi, lokacije ugovorenih firmi. Postojeća gradilišta ostaju "Naše gradilište" i ništa se ne mijenja u gorivu.</div>
       <div class="fg"><label>Naziv</label><input id="ng-n" placeholder="Hotel Bosna — faza 2"></div>
       <div class="fg"><label>Lokacija</label><input id="ng-l" placeholder="Bulevar bb, Ilidža"></div>
+      <div class="fg"><label>Vrsta lokacije</label><select id="ng-v">
+        <option value="nase">Naše gradilište</option>
+        <option value="firma">Ugovorena firma</option>
+        <option value="deponija">Privremena deponija</option>
+        <option value="izvor">Izvor materijala (kamenolom, separacija)</option>
+        <option value="privatno">Privatno — ustupanje materijala</option>
+      </select></div>
       <button class="btn btn-p" onclick="dodajG()">+ Dodaj</button>
       <div style="margin-top:12px" id="lst-g"></div>
     </div>
@@ -1262,6 +1351,7 @@ let S={
   brojaci:[],              // dnevna stanja brojača pumpe po cisterni (početak/kraj dana) - za otkrivanje neunesenih točenja
   treceVozila:[],          // istorija ranije unesenih vozila/vozača za treća lica (autocomplete, ne trajna baza)
   otpremnice3:[],          // otpremnice za točenje trećim licima - odvojeno od glavnih otpremnica
+  ture:[],                 // ture kamiona (odvoz/dovoz materijala) - POTPUNO odvojeno od goriva
   vrstaGoriva:['Dizel'],   // editabilna lista (Postavke) - default samo Dizel
   counter:100
 };
@@ -1279,6 +1369,7 @@ function load(){
     if(!S.treceVozila)S.treceVozila=[];
     if(!S.brojaci)S.brojaci=[];
     if(!S.otpremnice3)S.otpremnice3=[];
+    if(!S.ture)S.ture=[];
     return;}}catch(e){}
   initDemo();
 }
@@ -1549,9 +1640,230 @@ function showTab(name,btn){
     tocenje:()=>{ if(!curOtp) document.getElementById('otp-dat').value=today(); renderCisternaSemafor('tocenje-semafor'); },
     transfer:()=>{ document.getElementById('tr-dat').value=nowDT(); },
     ulaz:()=>{ if(!editingUlId) document.getElementById('ul-dat').value=nowDT(); renderCisternaSemafor('cisterna-semafor'); },
+    ture:initTure,
     mojaistorija:renderMojaIstorija
   };
   if(r[name]) r[name]();
+}
+
+// ═══════════════════════════════════════════════
+// TURE (evidencija tura kamiona)
+// VAŽNO: ovo je POTPUNO odvojeno od goriva. Ture ne diraju stanje cisterni,
+// otpremnice goriva, transfere ni bilo koji postojeći obračun.
+// ═══════════════════════════════════════════════
+const TU_ZAKOGA={nase:'Naše gradilište',firma:'Ugovorena firma',privatno:'Privatno — ustupanje'};
+const TU_PORIJEKLO={kupljeni:'Kupljeni / kamenolom',iskop:'Iz iskopa → deponija',deponija:'Vlastiti s deponije'};
+const TU_MJERENJE={procjena:'Procjena',vaga:'Vaga',premjer:'Geodetski premjer'};
+const TU_VRSTE_LOK={nase:'Naše gradilište',firma:'Ugovorena firma',deponija:'Privremena deponija',izvor:'Izvor materijala',privatno:'Privatno — ustupanje'};
+
+function tuEsc(s){return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+function tuLokNaziv(id){const g=gG(id);return g?g.naziv:'—';}
+
+function initTure(){
+  const d=document.getElementById('tu-dat');
+  if(d&&!d.value) d.value=today();
+  populateTure();
+  renderTureDana();
+  renderTureLista();
+}
+
+// Puni padajuće liste u kartici Ture (lokacije = gradilišta/šifarnik lokacija, vozila, firme)
+function populateTure(){
+  const lokOpcije=[...S.gradilista].sort((a,b)=>a.naziv.localeCompare(b.naziv))
+    .map(g=>`<option value="${g.id}">${tuEsc(g.naziv)}${g.vrsta&&g.vrsta!=='nase'?' ('+TU_VRSTE_LOK[g.vrsta]+')':''}</option>`).join('');
+  ['tu-od','tu-do'].forEach(id=>{
+    const el=document.getElementById(id);if(!el)return;
+    const prev=el.value;
+    el.innerHTML='<option value="">— izaberi —</option>'+lokOpcije;
+    if(prev) el.value=prev;
+  });
+  const vozOpcije=[...S.vozila].sort((a,b)=>String(a.reg).localeCompare(String(b.reg)))
+    .map(v=>`<option value="${v.id}">${tuEsc(v.reg)}${v.model?' — '+tuEsc(v.model):''}</option>`).join('');
+  ['tu-voz','tu-fil-voz'].forEach(id=>{
+    const el=document.getElementById(id);if(!el)return;
+    const prev=el.value, first=el.options[0]?el.options[0].outerHTML:'<option value="">—</option>';
+    el.innerHTML=first+vozOpcije;
+    if(prev) el.value=prev;
+  });
+  const fEl=document.getElementById('tu-firma');
+  if(fEl){const prev=fEl.value;fEl.innerHTML='<option value="">— izaberi firmu —</option>'+S.firme.map(f=>`<option value="${f.id}">${tuEsc(f.naziv)}</option>`).join('');if(prev)fEl.value=prev;}
+}
+
+function tuVoziloPromijenjeno(){
+  const v=S.vozila.find(x=>x.id===document.getElementById('tu-voz').value);
+  const vz=document.getElementById('tu-vozac');
+  if(v&&v.vozac&&!vz.value) vz.value=v.vozac;
+  renderTureDana();
+}
+
+function tuZaKogaPromijenjeno(){
+  const v=document.getElementById('tu-zakoga').value;
+  document.getElementById('tu-wrap-firma').style.display=(v==='firma')?'':'none';
+  document.getElementById('tu-wrap-privatno').style.display=(v==='privatno')?'':'none';
+}
+
+function ocistiTuruFormu(){
+  ['tu-od','tu-do','tu-mat','tu-kol','tu-brotp','tu-nap','tu-privatno'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  const f=document.getElementById('tu-firma');if(f)f.value='';
+}
+
+async function spremiTuru(){
+  const datum=document.getElementById('tu-dat').value;
+  const voziloId=document.getElementById('tu-voz').value;
+  if(!datum){toast('⚠ Izaberi datum.');return;}
+  if(!voziloId){toast('⚠ Izaberi vozilo.');return;}
+  const odId=document.getElementById('tu-od').value;
+  const doId=document.getElementById('tu-do').value;
+  if(!odId||!doId){toast('⚠ Izaberi odakle i dokle ide tura.');return;}
+  const kol=parseFloat(document.getElementById('tu-kol').value);
+  if(!(kol>0)){toast('⚠ Upiši količinu veću od nule.');return;}
+  const zakoga=document.getElementById('tu-zakoga').value;
+  const firmaId=document.getElementById('tu-firma').value;
+  const privatno=document.getElementById('tu-privatno').value.trim();
+  if(zakoga==='firma'&&!firmaId){toast('⚠ Izaberi ugovorenu firmu.');return;}
+  if(zakoga==='privatno'&&!privatno){toast('⚠ Upiši ime vlasnika/parcele.');return;}
+  const podaci={
+    datum, voziloId,
+    vozac:document.getElementById('tu-vozac').value.trim(),
+    brojPN:document.getElementById('tu-pn').value.trim(),
+    odId, doId,
+    materijal:document.getElementById('tu-mat').value.trim(),
+    kolicina:kol,
+    jedinica:document.getElementById('tu-jed').value,
+    porijeklo:document.getElementById('tu-por').value,
+    zakoga, firmaId:zakoga==='firma'?firmaId:'', privatnoIme:zakoga==='privatno'?privatno:'',
+    brojOtp:document.getElementById('tu-brotp').value.trim(),
+    mjerenje:document.getElementById('tu-mjer').value,
+    napomena:document.getElementById('tu-nap').value.trim(),
+    unioKorisnik:currentUser?currentUser.username:'',
+    unesenoVrijeme:new Date().toISOString()
+  };
+  try{
+    await window.FB.addDoc(window.FB.col('ture'),podaci);
+    logAkcija('Unesena tura', `${datum} · ${gV(voziloId)?.reg||voziloId} · ${tuLokNaziv(odId)} → ${tuLokNaziv(doId)} · ${kol} ${podaci.jedinica}`);
+    ocistiTuruFormu();
+    toast('✓ Tura sačuvana!');
+  }catch(e){toast('⚠ Greška: '+e.message,4000);}
+}
+
+async function obrisiTuru(id){
+  if(!confirm('Obrisati ovu turu? Ova radnja se ne može poništiti.'))return;
+  try{
+    await window.FB.deleteDoc(window.FB.docRef('ture',id));
+    logAkcija('Obrisana tura', id);
+    toast('✓ Tura obrisana.');
+  }catch(e){toast('⚠ Greška: '+e.message);}
+}
+
+function tuOpisZaKoga(t){
+  if(t.zakoga==='firma'){const f=gF(t.firmaId);return 'Firma: '+(f?f.naziv:'—');}
+  if(t.zakoga==='privatno')return 'Privatno: '+(t.privatnoIme||'—');
+  return 'Naše gradilište';
+}
+
+// Ture za izabrani datum + vozilo (pomoć pri prepisivanju s papira)
+function renderTureDana(){
+  const el=document.getElementById('tu-dana');if(!el)return;
+  const datum=document.getElementById('tu-dat').value;
+  const voziloId=document.getElementById('tu-voz').value;
+  if(!datum||!voziloId){el.innerHTML='<div class="empty">Izaberi datum i vozilo gore.</div>';return;}
+  const lista=S.ture.filter(t=>t.datum===datum&&t.voziloId===voziloId)
+    .sort((a,b)=>String(a.unesenoVrijeme||'').localeCompare(String(b.unesenoVrijeme||'')));
+  if(!lista.length){el.innerHTML='<div class="empty">Još nema unesenih tura za ovaj dan i vozilo.</div>';return;}
+  let m3=0,t_=0;
+  lista.forEach(t=>{ if(t.jedinica==='t') t_+=Number(t.kolicina)||0; else m3+=Number(t.kolicina)||0; });
+  el.innerHTML=`<div class="tw"><table><thead><tr><th>#</th><th>Relacija</th><th>Materijal</th><th>Količina</th><th>Za koga</th><th>Otpremnica</th><th></th></tr></thead><tbody>`+
+    lista.map((t,i)=>`<tr>
+      <td>${i+1}</td>
+      <td>${tuEsc(tuLokNaziv(t.odId))} → ${tuEsc(tuLokNaziv(t.doId))}</td>
+      <td>${tuEsc(t.materijal||'—')}<br><span style="font-size:10px;color:var(--mut2)">${TU_PORIJEKLO[t.porijeklo]||''}</span></td>
+      <td style="white-space:nowrap">${t.kolicina} ${t.jedinica==='t'?'t':'m³'}</td>
+      <td>${tuEsc(tuOpisZaKoga(t))}</td>
+      <td>${tuEsc(t.brojOtp||'—')}</td>
+      <td><button class="btn btn-r" onclick="obrisiTuru('${t.id}')">✕</button></td>
+    </tr>`).join('')+
+    `</tbody></table></div>
+    <div style="margin-top:8px;font-size:12px;color:var(--mut2)">Ukupno tura: <b style="color:var(--acc)">${lista.length}</b>${m3?` · ${m3.toFixed(2)} m³`:''}${t_?` · ${t_.toFixed(2)} t`:''}</div>`;
+}
+
+function tuFilPeriod(p){
+  const d=new Date();
+  if(p==='mjesec'){
+    const prvi=new Date(d.getFullYear(),d.getMonth(),1);
+    document.getElementById('tu-fil-od').value=prvi.toISOString().split('T')[0];
+    document.getElementById('tu-fil-do').value=today();
+  }
+  renderTureLista();
+}
+function tuFilReset(){
+  ['tu-fil-od','tu-fil-do','tu-fil-q'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  ['tu-fil-voz','tu-fil-zakoga'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  renderTureLista();
+}
+
+function tureFiltrirane(){
+  const od=document.getElementById('tu-fil-od')?.value||'';
+  const dos=document.getElementById('tu-fil-do')?.value||'';
+  const voz=document.getElementById('tu-fil-voz')?.value||'';
+  const zk=document.getElementById('tu-fil-zakoga')?.value||'';
+  const q=(document.getElementById('tu-fil-q')?.value||'').trim().toLowerCase();
+  return S.ture.filter(t=>{
+    if(od&&t.datum<od)return false;
+    if(dos&&t.datum>dos)return false;
+    if(voz&&t.voziloId!==voz)return false;
+    if(zk&&t.zakoga!==zk)return false;
+    if(q){
+      const hay=[t.materijal,t.brojOtp,t.napomena,t.vozac,t.brojPN,t.privatnoIme,tuLokNaziv(t.odId),tuLokNaziv(t.doId)].join(' ').toLowerCase();
+      if(!hay.includes(q))return false;
+    }
+    return true;
+  }).sort((a,b)=>String(b.datum).localeCompare(String(a.datum)));
+}
+
+function renderTureLista(){
+  const el=document.getElementById('tbl-ture');if(!el)return;
+  const lista=tureFiltrirane();
+  const sz=document.getElementById('tu-sazetak');
+  if(!lista.length){
+    el.innerHTML='<div class="empty">Nema tura za ovaj filter</div>';
+    if(sz)sz.innerHTML='';
+    return;
+  }
+  let m3=0,t_=0;
+  lista.forEach(t=>{ if(t.jedinica==='t') t_+=Number(t.kolicina)||0; else m3+=Number(t.kolicina)||0; });
+  if(sz)sz.innerHTML=`<div class="signal sig-ok">Tura: <b>${lista.length}</b>${m3?` · ukupno ${m3.toFixed(2)} m³`:''}${t_?` · ukupno ${t_.toFixed(2)} t`:''}</div>`;
+  el.innerHTML=`<table><thead><tr><th>Datum</th><th>Vozilo</th><th>Vozač</th><th>Relacija</th><th>Materijal</th><th>Količina</th><th>Za koga</th><th>Otpremnica</th><th></th></tr></thead><tbody>`+
+    lista.map(t=>{const v=gV(t.voziloId);return`<tr>
+      <td style="white-space:nowrap">${tuEsc(t.datum)}</td>
+      <td style="font-family:monospace;color:var(--acc3)">${tuEsc(v?v.reg:'—')}</td>
+      <td>${tuEsc(t.vozac||'—')}</td>
+      <td>${tuEsc(tuLokNaziv(t.odId))} → ${tuEsc(tuLokNaziv(t.doId))}</td>
+      <td>${tuEsc(t.materijal||'—')}<br><span style="font-size:10px;color:var(--mut2)">${TU_PORIJEKLO[t.porijeklo]||''}</span></td>
+      <td style="white-space:nowrap">${t.kolicina} ${t.jedinica==='t'?'t':'m³'}</td>
+      <td>${tuEsc(tuOpisZaKoga(t))}</td>
+      <td>${tuEsc(t.brojOtp||'—')}</td>
+      <td><button class="btn btn-r" onclick="obrisiTuru('${t.id}')">✕</button></td>
+    </tr>`;}).join('')+`</tbody></table>`;
+}
+
+function exportTureExcel(){
+  if(typeof XLSX==='undefined'){toast('⚠ Učitava se Excel biblioteka, pokušaj za sekundu...',3000);return;}
+  const lista=tureFiltrirane();
+  if(!lista.length){toast('⚠ Nema tura za ovaj filter.');return;}
+  const rows=[['Ture — izvoz '+today()],[],
+    ['Datum','Vozilo','Vozač','Br. putnog naloga','Odakle','Dokle','Materijal','Porijeklo','Količina','Jedinica','Za koga','Firma/Vlasnik','Br. otpremnice','Mjerenje','Napomena']];
+  lista.slice().sort((a,b)=>String(a.datum).localeCompare(String(b.datum))).forEach(t=>{
+    const v=gV(t.voziloId);
+    rows.push([t.datum,v?v.reg:'',t.vozac||'',t.brojPN||'',tuLokNaziv(t.odId),tuLokNaziv(t.doId),t.materijal||'',
+      TU_PORIJEKLO[t.porijeklo]||'',t.kolicina,t.jedinica==='t'?'t':'m3',TU_ZAKOGA[t.zakoga]||'',
+      t.zakoga==='firma'?(gF(t.firmaId)?.naziv||''):(t.privatnoIme||''),t.brojOtp||'',TU_MJERENJE[t.mjerenje]||'',t.napomena||'']);
+  });
+  const ws=XLSX.utils.aoa_to_sheet(rows);
+  ws['!cols']=[{wch:12},{wch:14},{wch:18},{wch:16},{wch:22},{wch:22},{wch:22},{wch:20},{wch:10},{wch:8},{wch:20},{wch:22},{wch:14},{wch:16},{wch:30}];
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,ws,'Ture');
+  XLSX.writeFile(wb,`ture_${today()}.xlsx`);
+  toast('✓ Excel preuzet!');
 }
 
 // ═══ MOJA ISTORIJA (vozač) ═══
@@ -3834,8 +4146,37 @@ function izracunajTrosakStavke(s){
   return s.izvorUlaza.reduce((a,x)=>a+resolveChainCost(x.ulazId,x.litara,0),0);
 }
 
+// Pregled tura u Izvještaju — čita SAMO kolekciju tura, ne dira nijedan obračun goriva
+function renderIzvTure(){
+  const tbVoz=document.getElementById('rep-ture-voz');
+  if(!tbVoz)return;
+  const od=document.getElementById('izv-od')?.value||'';
+  const dos=document.getElementById('izv-do')?.value||'';
+  const lista=S.ture.filter(t=>{ if(od&&t.datum<od)return false; if(dos&&t.datum>dos)return false; return true; });
+  const zbir=(kljucFn)=>{
+    const m={};
+    lista.forEach(t=>{
+      const k=kljucFn(t); if(k===null||k===undefined)return;
+      if(!m[k])m[k]={br:0,m3:0,t:0};
+      m[k].br++;
+      if(t.jedinica==='t') m[k].t+=Number(t.kolicina)||0; else m[k].m3+=Number(t.kolicina)||0;
+    });
+    return m;
+  };
+  const ispisi=(elId,mapa,nazivFn,prazno)=>{
+    const el=document.getElementById(elId);if(!el)return;
+    const redovi=Object.entries(mapa).sort((a,b)=>b[1].br-a[1].br);
+    el.innerHTML=redovi.length?redovi.map(([k,v])=>`<tr><td>${tuEsc(nazivFn(k))}</td><td>${v.br}</td><td>${v.m3?v.m3.toFixed(2):'—'}</td><td>${v.t?v.t.toFixed(2):'—'}</td></tr>`).join('')
+      :`<tr><td colspan="4" style="color:var(--mut2)">${prazno}</td></tr>`;
+  };
+  ispisi('rep-ture-voz',zbir(t=>t.voziloId),id=>gV(id)?.reg||'—','Nema tura u periodu');
+  ispisi('rep-ture-lok',zbir(t=>t.doId),id=>tuLokNaziv(id),'Nema tura u periodu');
+  ispisi('rep-ture-firma',zbir(t=>t.zakoga==='firma'?t.firmaId:null),id=>gF(id)?.naziv||'—','Nema tura za ugovorene firme');
+}
+
 function renderIzv(){
   populateIzvFiltere();
+  renderIzvTure();
   // Filtriraj otpremnice po periodu+gradilištu, pa svaku dodatno po firmi/vozilu na nivou stavke
   const all=filtrirajPeriod(S.otpremnice,'datum').map(o=>({...o, stavke:o.stavke.filter(stavkaProladiFilter)})).filter(o=>o.stavke.length);
   const all3=filtrirajPeriod(S.otpremnice3,'datum');
@@ -4842,7 +5183,7 @@ async function izvrsiReset(){
   if(btn){btn.disabled=true;btn.textContent='Brišem...';}
   logAkcija('RESET CIJELOG SISTEMA', 'Sve podatke obrisao/la '+(currentUser?currentUser.username:'?'));
   try{
-    const kolekcije=['cistijerne','firme','gradilista','vozila','ulazi','otpremnice','otpremnice3','transferi','treceLiceFirme','treceVozila'];
+    const kolekcije=['cistijerne','firme','gradilista','vozila','ulazi','otpremnice','otpremnice3','transferi','treceLiceFirme','treceVozila','ture'];
     for(const k of kolekcije){ await window.FB.wipeCollection(k); }
     await window.FB.setDoc(window.FB.docRef('settings','mojaFirma'),{naziv:'',adresa:'',idBroj:'',tel:'',email:'',osoba:''});
     await window.FB.setDoc(window.FB.docRef('settings','counter'),{counter:100});
@@ -4897,7 +5238,9 @@ async function napraviBackup(){
     ...S.vozila.map(v=>[v.reg,v.tip,v.model||'',gF(v.firmaId)?.naziv||'',v.vozac||'',v.napomena||''])]);
   dodajList('Firme',[['Naziv','Adresa'],...S.firme.map(f=>[f.naziv,f.adr||''])]);
   dodajList('Cisterne',[['Registracija','Vozač'],...S.cistijerne.map(c=>[c.reg,c.vozac||''])]);
-  dodajList('Gradilista',[['Naziv','Lokacija'],...[...S.gradilista].sort((a,b)=>a.naziv.localeCompare(b.naziv)).map(g=>[g.naziv,g.lok||''])]);
+  dodajList('Gradilista',[['Naziv','Lokacija','Vrsta'],...[...S.gradilista].sort((a,b)=>a.naziv.localeCompare(b.naziv)).map(g=>[g.naziv,g.lok||'',TU_VRSTE_LOK[g.vrsta||'nase']])]);
+  dodajList('Ture',[['Datum','Vozilo','Vozac','BrPutnogNaloga','Odakle','Dokle','Materijal','Porijeklo','Kolicina','Jedinica','ZaKoga','FirmaVlasnik','BrOtpremnice','Mjerenje','Napomena'],
+    ...[...S.ture].sort((a,b)=>String(a.datum).localeCompare(String(b.datum))).map(t=>[t.datum,gV(t.voziloId)?.reg||'',t.vozac||'',t.brojPN||'',tuLokNaziv(t.odId),tuLokNaziv(t.doId),t.materijal||'',TU_PORIJEKLO[t.porijeklo]||'',t.kolicina,t.jedinica==='t'?'t':'m3',TU_ZAKOGA[t.zakoga]||'',t.zakoga==='firma'?(gF(t.firmaId)?.naziv||''):(t.privatnoIme||''),t.brojOtp||'',TU_MJERENJE[t.mjerenje]||'',t.napomena||''])]);
   const otpRows=[['Datum','Vrijeme','Broj','Cisterna','Gradiliste','Vozilo','Vozac','KM/MotoSati','Litara']];
   S.otpremnice.forEach(o=>{const c=gC(o.cistijernId),g=gG(o.gradId);o.stavke.forEach(s=>{const vi=stavkaVehInfo(s),isB=stavkaJeMotoSati(s);otpRows.push([o.datum,s.vrijeme||'',o.brojOtp,c?.reg||'',g?.naziv||'',vi.reg,s.vozacIme||'',formatMjerilo(s,isB),s.litara]);});});
   dodajList('Otpremnice',otpRows);
@@ -5010,7 +5353,7 @@ async function deaktivirajKorisnika(uid,username){
 function sacuvajMF(){const data={naziv:document.getElementById('mf-n').value.trim(),adresa:document.getElementById('mf-a').value.trim(),idBroj:document.getElementById('mf-id').value.trim(),tel:document.getElementById('mf-t').value.trim(),email:document.getElementById('mf-e').value.trim(),osoba:document.getElementById('mf-o').value.trim()};window.FB.setDoc(window.FB.docRef('settings','mojaFirma'),data).then(()=>toast('✓ Sačuvano!')).catch(e=>toast('⚠ Greška: '+e.message));}
 async function dodajC(){const reg=document.getElementById('nc-reg').value.trim().toUpperCase(),voz=document.getElementById('nc-voz').value.trim(),kap=parseFloat(document.getElementById('nc-kap').value)||null;if(!reg){toast('Unesite registraciju!');return;}try{await window.FB.addDoc(window.FB.col('cistijerne'),{reg,vozac:voz,kapacitet:kap});document.getElementById('nc-reg').value='';document.getElementById('nc-voz').value='';document.getElementById('nc-kap').value='';toast('✓ Cisterna dodana!');}catch(e){toast('⚠ Greška: '+e.message);}}
 async function dodajF(){const naziv=document.getElementById('nf-n').value.trim();if(!naziv){toast('Unesite naziv!');return;}try{await window.FB.addDoc(window.FB.col('firme'),{naziv,adr:document.getElementById('nf-a').value.trim()});document.getElementById('nf-n').value='';document.getElementById('nf-a').value='';toast('✓ Firma dodana!');}catch(e){toast('⚠ Greška: '+e.message);}}
-async function dodajG(){const naziv=document.getElementById('ng-n').value.trim();if(!naziv){toast('Unesite naziv!');return;}try{await window.FB.addDoc(window.FB.col('gradilista'),{naziv,lok:document.getElementById('ng-l').value.trim()});document.getElementById('ng-n').value='';document.getElementById('ng-l').value='';toast('✓ Gradilište dodano!');}catch(e){toast('⚠ Greška: '+e.message);}}
+async function dodajG(){const naziv=document.getElementById('ng-n').value.trim();if(!naziv){toast('Unesite naziv!');return;}try{await window.FB.addDoc(window.FB.col('gradilista'),{naziv,lok:document.getElementById('ng-l').value.trim(),vrsta:document.getElementById('ng-v')?.value||'nase'});document.getElementById('ng-n').value='';document.getElementById('ng-l').value='';toast('✓ Lokacija dodana!');}catch(e){toast('⚠ Greška: '+e.message);}}
 async function dodajTL(){const naziv=document.getElementById('ntl-n').value.trim();if(!naziv){toast('Unesite naziv!');return;}try{await window.FB.addDoc(window.FB.col('treceLiceFirme'),{naziv});document.getElementById('ntl-n').value='';toast('✓ Treće lice dodano!');}catch(e){toast('⚠ Greška: '+e.message);}}
 
 // ═══ VRSTE GORIVA (editabilna lista, čuva se u settings/gorivo) ═══
@@ -5045,7 +5388,7 @@ function renderGorivoLista(){
 const EDIT_POLJA={
   c:[['reg','Registracija'],['vozac','Vozač'],['kapacitet','Kapacitet (L)']],
   f:[['naziv','Naziv'],['adr','Adresa']],
-  g:[['naziv','Naziv'],['lok','Lokacija']],
+  g:[['naziv','Naziv'],['lok','Lokacija'],['vrsta','Vrsta lokacije']],
   tl:[['naziv','Naziv']]
 };
 async function obrisi(tp,id){
@@ -5059,7 +5402,14 @@ function urediItem(tp,id){
   const item=S[m[tp]].find(x=>x.id===id);if(!item)return;
   const row=document.getElementById('li-'+tp+'-'+id);if(!row)return;
   row.innerHTML=`<div style="width:100%;padding:6px 0">
-    ${EDIT_POLJA[tp].map(([k,lbl])=>`<div class="fg" style="margin-bottom:6px"><label style="font-size:10px">${lbl}</label><input id="ei-${tp}-${id}-${k}" value="${item[k]||''}" style="width:100%"></div>`).join('')}
+    ${EDIT_POLJA[tp].map(([k,lbl])=>{
+      if(k==='vrsta'){
+        const trenutno=item.vrsta||'nase';
+        return `<div class="fg" style="margin-bottom:6px"><label style="font-size:10px">${lbl}</label><select id="ei-${tp}-${id}-${k}" style="width:100%">`+
+          Object.entries(TU_VRSTE_LOK).map(([v,naziv])=>`<option value="${v}" ${v===trenutno?'selected':''}>${naziv}</option>`).join('')+`</select></div>`;
+      }
+      return `<div class="fg" style="margin-bottom:6px"><label style="font-size:10px">${lbl}</label><input id="ei-${tp}-${id}-${k}" value="${item[k]||''}" style="width:100%"></div>`;
+    }).join('')}
     <div style="display:flex;gap:6px;margin-top:4px">
       <button class="btn btn-p" style="padding:5px 12px;font-size:12px" onclick="sacuvajItem('${tp}','${id}')">✓ Sačuvaj</button>
       <button class="btn btn-s" style="padding:5px 12px;font-size:12px" onclick="renderLists()">✕ Otkaži</button>
@@ -5080,7 +5430,11 @@ function listItem(el,name,sub,id,tp){return`<div class="li-row" id="li-${tp}-${i
 function renderLists(){
   document.getElementById('lst-c').innerHTML=S.cistijerne.map(c=>listItem(null,`<span style="font-family:monospace;color:var(--acc3)">${c.reg}</span>`,(c.vozac||'')+(c.kapacitet?' · kap. '+c.kapacitet+'L':''),c.id,'c')).join('')||'<div style="color:var(--mut2);font-size:12px;padding:8px">Nema cistijerni</div>';
   document.getElementById('lst-f').innerHTML=S.firme.map(f=>listItem(null,f.naziv,f.adr,f.id,'f')).join('')||'<div style="color:var(--mut2);font-size:12px;padding:8px">Nema firmi</div>';
-  document.getElementById('lst-g').innerHTML=[...S.gradilista].sort((a,b)=>a.naziv.localeCompare(b.naziv)).map(g=>listItem(null,g.naziv,g.lok?'📍 '+g.lok:'',g.id,'g')).join('')||'<div style="color:var(--mut2);font-size:12px;padding:8px">Nema gradilišta</div>';
+  document.getElementById('lst-g').innerHTML=[...S.gradilista].sort((a,b)=>a.naziv.localeCompare(b.naziv)).map(g=>{
+    const vrsta=TU_VRSTE_LOK[g.vrsta||'nase'];
+    const sub=[g.lok?'📍 '+g.lok:'', vrsta].filter(Boolean).join(' · ');
+    return listItem(null,g.naziv,sub,g.id,'g');
+  }).join('')||'<div style="color:var(--mut2);font-size:12px;padding:8px">Nema lokacija</div>';
   document.getElementById('lst-tl').innerHTML=S.treceLiceFirme.map(f=>listItem(null,f.naziv,'',f.id,'tl')).join('')||'<div style="color:var(--mut2);font-size:12px;padding:8px">Nema trećih lica</div>';
 }
 
@@ -5115,6 +5469,7 @@ function logAkcija(akcija, detalji){
 function renderAll(){
   populateAll();populateTrecaFirme();renderLists();renderVozilaTbl();
   renderDanas();renderTr();renderUl();renderTlLista();renderPregled();renderIzv();
+  populateTure();renderTureDana();renderTureLista();
   populateBrojacCist();ucitajBrojac(false);
   if(currentUser&&currentUser.role==='admin') renderDashboard();
 }
@@ -5174,6 +5529,7 @@ function startSync(){
   watch('ulazi','ulazi');
   watch('otpremnice','otpremnice');
   watch('otpremnice3','otpremnice3');
+  watch('ture','ture');
   watch('transferi','transferi');
   watch('brojaci','brojaci');
   unsubscribers.push(window.FB.watchDoc('settings/mojaFirma',data=>{
