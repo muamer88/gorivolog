@@ -1009,7 +1009,7 @@ try{
       <button class="btn btn-p" onclick="openAddVehicle()">+ Novo vozilo</button>
     </div>
     <div class="fil">
-      <input type="text" id="vfil-q" placeholder="Pretraži registraciju, vozača, model..." oninput="renderVozilaTbl()">
+      <input type="text" id="vfil-q" placeholder="Pretraži registraciju, vozača, model, lokaciju..." oninput="renderVozilaTbl()">
       <select id="vfil-tip" onchange="renderVozilaTbl()">
         <option value="">Svi tipovi</option>
         <option value="kamion">Kamioni</option>
@@ -1020,6 +1020,7 @@ try{
         <option value="malo">Mala vozila</option>
       </select>
       <select id="vfil-fir" onchange="renderVozilaTbl()"><option value="">Sve firme</option></select>
+      <select id="vfil-lok" onchange="renderVozilaTbl()"><option value="">Sve lokacije</option></select>
       <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--mut2);white-space:nowrap"><input type="checkbox" id="vfil-neaktivna" onchange="renderVozilaTbl()"> Prikaži i neaktivna</label>
       <span class="fil-count" id="vfil-count"></span>
     </div>
@@ -1279,6 +1280,7 @@ try{
         <div class="fg"><label>Serijski broj / broj šasije (opciono)</label><input id="nv-serijski" placeholder="za mašine bez registracije" oninput="this.value=this.value.toUpperCase()"></div>
         <div class="fg"><label>Firma (može i naknadno)</label><select id="nv-fir"><option value="">— odaberi —</option></select></div>
         <div class="fg full"><label>Ime i prezime vozača</label><input id="nv-voz" placeholder="Ime Prezime"></div>
+        <div class="fg full"><label>Lokacija / radi na (opciono)</label><input id="nv-lok" placeholder="npr. ZENICA JUG, UPRAVA"></div>
         <div class="fg full"><label>Napomena (opciono)</label><input id="nv-nap" placeholder="npr. novo vozilo, nije bilo u bazi"></div>
       </div>
     </div>
@@ -2040,6 +2042,7 @@ function quickAddVeh(prefillReg){
   document.getElementById('nv-garazni').value='';
   document.getElementById('nv-serijski').value='';
   document.getElementById('nv-voz').value='';
+  if(document.getElementById('nv-lok')) document.getElementById('nv-lok').value='';
   document.getElementById('nv-nap')&&(document.getElementById('nv-nap').value='');
   // Označi da nakon snimanja treba odmah izabrati ovo vozilo za trenutni unos
   window._quickAddForEntry=true;
@@ -4438,13 +4441,13 @@ function exportTrecaExcel(){
 function exportVozilaExcel(){
   if(typeof XLSX==='undefined'){toast('⚠ Učitava se XLSX biblioteka, pokušaj za sekundu...',3000);return;}
   if(!S.vozila.length){toast('⚠ Nema vozila za izvoz.');return;}
-  const rows=[['Registracija','Tip','Model','Firma','Vozač','Garažni broj','Status','Serijski broj','Mjerilo','Napomena']];
+  const rows=[['Registracija','Tip','Model','Firma','Vozač','Garažni broj','Status','Serijski broj','Mjerilo','Napomena','Lokacija']];
   [...S.vozila].sort((a,b)=>a.reg.localeCompare(b.reg)).forEach(v=>{
     const f=gF(v.firmaId);
-    rows.push([v.reg, v.tip, v.model||'', f?f.naziv:'', v.vozac||'', v.garazniBr||'', jeAktivan(v)?'':'PRODAN', v.serijskiBr||'', v.mjeriloTip||'', v.napomena||'']);
+    rows.push([v.reg, v.tip, v.model||'', f?f.naziv:'', v.vozac||'', v.garazniBr||'', jeAktivan(v)?'':'PRODAN', v.serijskiBr||'', v.mjeriloTip||'', v.napomena||'', v.lokacija||'']);
   });
   const ws=XLSX.utils.aoa_to_sheet(rows);
-  ws['!cols']=[{wch:16},{wch:10},{wch:20},{wch:25},{wch:22},{wch:14},{wch:12},{wch:26},{wch:10},{wch:30}];
+  ws['!cols']=[{wch:16},{wch:10},{wch:20},{wch:25},{wch:22},{wch:14},{wch:12},{wch:26},{wch:10},{wch:30},{wch:24}];
   const wb=XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb,ws,'Vozila');
   XLSX.writeFile(wb,`vozila_export_${today()}.xlsx`);
@@ -4546,7 +4549,7 @@ function normTip(t){
 }
 
 function showImportPreview(rows){
-  let html='<table><thead><tr><th>Status</th><th>Registracija</th><th>Garažni br.</th><th>Serijski br.</th><th>Tip</th><th>Model</th><th>Firma</th><th>Vozač</th><th>Aktivan?</th><th>Napomena</th><th>Info</th></tr></thead><tbody>';
+  let html='<table><thead><tr><th>Status</th><th>Registracija</th><th>Garažni br.</th><th>Serijski br.</th><th>Tip</th><th>Model</th><th>Firma</th><th>Vozač</th><th>Lokacija</th><th>Aktivan?</th><th>Napomena</th><th>Info</th></tr></thead><tbody>';
   let nOk=0,nNew=0,nWarn=0,nNeaktivno=0;
   rows.forEach(r=>{
     let reg=normReg(r[0]);
@@ -4559,6 +4562,7 @@ function showImportPreview(rows){
     const serijskiBr=normReg(r[7]);
     const mjeriloTip=normMjerilo(r[8]);
     const napomena=String(r[9]||'').trim();
+    const lokacija=String(r[10]||'').trim();
     if(!reg && (garazniBr||serijskiBr)) reg=garazniBr||serijskiBr; // mašina bez registracije - prikaži pod garažnim/serijskim
     if(!reg){return;}
     // Rezervni ključ: ako se ne nađe po registraciji, probaj po serijskom broju (za mašine bez table)
@@ -4571,7 +4575,7 @@ function showImportPreview(rows){
     if(firmaNaziv&&!firmaExists){info='Firma "'+firmaNaziv+'" će biti kreirana';nNew++;}
     if(mjeriloTip) info+=(info?' · ':'')+'mjerilo: '+(mjeriloTip==='sati'?'moto sati':'km');
     if(!aktivan) nNeaktivno++;
-    html+=`<tr class="${cls}" style="${!aktivan?'opacity:.55':''}"><td style="font-size:12px">${stat}</td><td style="font-family:monospace;font-weight:700;color:var(--acc)">${reg}</td><td style="font-family:monospace;color:var(--acc4)">${garazniBr||'—'}</td><td style="font-family:monospace;font-size:11px;color:var(--mut2)">${serijskiBr||'—'}</td><td>${tipL(tip)}</td><td style="font-size:12px">${model||'—'}</td><td>${firmaNaziv||'—'}</td><td style="font-size:12px">${vozac||'—'}</td><td>${aktivan?'✅':'<span class="tag t-warn" style="font-size:10px">NEAKTIVNO</span>'}</td><td style="font-size:11px;max-width:200px">${napomena||'—'}</td><td style="font-size:11px;color:var(--acc2)">${info}</td></tr>`;
+    html+=`<tr class="${cls}" style="${!aktivan?'opacity:.55':''}"><td style="font-size:12px">${stat}</td><td style="font-family:monospace;font-weight:700;color:var(--acc)">${reg}</td><td style="font-family:monospace;color:var(--acc4)">${garazniBr||'—'}</td><td style="font-family:monospace;font-size:11px;color:var(--mut2)">${serijskiBr||'—'}</td><td>${tipL(tip)}</td><td style="font-size:12px">${model||'—'}</td><td>${firmaNaziv||'—'}</td><td style="font-size:12px">${vozac||'—'}</td><td style="font-size:12px">${lokacija||'—'}</td><td>${aktivan?'✅':'<span class="tag t-warn" style="font-size:10px">NEAKTIVNO</span>'}</td><td style="font-size:11px;max-width:200px">${napomena||'—'}</td><td style="font-size:11px;color:var(--acc2)">${info}</td></tr>`;
   });
   html+='</tbody></table>';
   document.getElementById('import-tbl').innerHTML=html;
@@ -4607,6 +4611,7 @@ async function confirmImport(){
     const serijskiBr=normReg(r[7]);
     const mjeriloTip=normMjerilo(r[8]);
     const napomena=String(r[9]||'').trim();
+    const lokacija=String(r[10]||'').trim(); // kolona K (opciona) - prazna NE briše postojeću lokaciju
     if(!reg && (garazniBr||serijskiBr)) reg=garazniBr||serijskiBr;
     if(!reg)return;
     let firmaId='';
@@ -4618,11 +4623,11 @@ async function confirmImport(){
     let idx=S.vozila.findIndex(v=>v.reg===reg);
     if(idx<0 && serijskiBr) idx=S.vozila.findIndex(v=>v.serijskiBr && v.serijskiBr===serijskiBr);
     if(idx>=0){
-      ops.push({type:'set',col:'vozila',id:S.vozila[idx].id,data:{tip,model,garazniBr,serijskiBr,firmaId,vozac,aktivan,mjeriloTip,napomena},merge:true});
+      ops.push({type:'set',col:'vozila',id:S.vozila[idx].id,data:{tip,model,garazniBr,serijskiBr,firmaId,vozac,aktivan,mjeriloTip,napomena,...(lokacija?{lokacija}:{})},merge:true});
       updatedV++;
     }else{
       const id=window.FB.newDocId('vozila');
-      ops.push({type:'set',col:'vozila',id,data:{reg,tip,model,garazniBr,serijskiBr,firmaId,vozac,aktivan,mjeriloTip,napomena}});
+      ops.push({type:'set',col:'vozila',id,data:{reg,tip,model,garazniBr,serijskiBr,firmaId,vozac,aktivan,mjeriloTip,napomena,lokacija}});
       addedV++;
     }
   });
@@ -4647,11 +4652,20 @@ function renderVozilaTbl(){
   const q=(document.getElementById('vfil-q')?.value||'').toLowerCase();
   const tipF=document.getElementById('vfil-tip')?.value||'';
   const firF=document.getElementById('vfil-fir')?.value||'';
+  const lokEl=document.getElementById('vfil-lok');
+  if(lokEl){ // lista lokacija iz baze vozila (slobodan tekst), sortirano
+    const prev=lokEl.value;
+    const lokacije=[...new Set(S.vozila.map(v=>(v.lokacija||'').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b));
+    lokEl.innerHTML='<option value="">Sve lokacije</option>'+lokacije.map(l=>`<option value="${l.replace(/"/g,'&quot;')}">${l.replace(/</g,'&lt;')}</option>`).join('');
+    if(prev && lokacije.includes(prev)) lokEl.value=prev;
+  }
+  const lokF=lokEl?.value||'';
   const prikaziNeaktivna=document.getElementById('vfil-neaktivna')?.checked||false;
   let list=S.vozila.filter(v=>{
     if(!prikaziNeaktivna && !jeAktivan(v))return false;
-    if(q&&!v.reg.toLowerCase().includes(q)&&!(v.vozac||'').toLowerCase().includes(q)&&!(v.model||'').toLowerCase().includes(q)&&!(v.garazniBr||'').toLowerCase().includes(q)&&!(v.serijskiBr||'').toLowerCase().includes(q))return false;
+    if(q&&!v.reg.toLowerCase().includes(q)&&!(v.vozac||'').toLowerCase().includes(q)&&!(v.model||'').toLowerCase().includes(q)&&!(v.garazniBr||'').toLowerCase().includes(q)&&!(v.serijskiBr||'').toLowerCase().includes(q)&&!(v.lokacija||'').toLowerCase().includes(q))return false;
     if(tipF&&v.tip!==tipF)return false;
+    if(lokF&&(v.lokacija||'').trim()!==lokF)return false;
     if(firF&&v.firmaId!==firF)return false;
     return true;
   });
@@ -4659,7 +4673,7 @@ function renderVozilaTbl(){
   if(cnt)cnt.textContent=`${list.length} / ${S.vozila.length} vozila`;
   const el=document.getElementById('tbl-vozila');
   if(!list.length){el.innerHTML='<div class="empty">Nema vozila u bazi</div>';return;}
-  el.innerHTML='<div class="tw"><table class="excel-like"><thead><tr><th>Registracija</th><th>Garažni br.</th><th>Serijski br.</th><th>Tip</th><th>Model</th><th>Firma</th><th>Vozač</th><th>Status</th><th style="text-align:center">Akcije</th></tr></thead><tbody id="veh-tbody">'+
+  el.innerHTML='<div class="tw"><table class="excel-like"><thead><tr><th>Registracija</th><th>Garažni br.</th><th>Serijski br.</th><th>Tip</th><th>Model</th><th>Firma</th><th>Vozač</th><th>Lokacija</th><th>Status</th><th style="text-align:center">Akcije</th></tr></thead><tbody id="veh-tbody">'+
     list.map(v=>renderVehRow(v)).join('')+'</tbody></table></div>';
 }
 
@@ -4710,6 +4724,7 @@ function renderVehRow(v){
     <td style="font-size:12px;color:var(--mut2)">${v.model||'—'}</td>
     <td><span class="tag t-f" style="font-size:11px">${f?f.naziv:'?'}</span></td>
     <td style="font-size:12px">${v.vozac||'—'}</td>
+    <td style="font-size:12px;color:var(--acc3)">${(v.lokacija||'—').replace(/</g,'&lt;')}</td>
     <td>${neaktivno?'<span class="tag t-warn" style="font-size:10px">NEAKTIVNO</span>':'<span class="tag t-ok" style="font-size:10px">Aktivno</span>'}</td>
     <td style="text-align:center;white-space:nowrap">
       <button class="btn btn-qr" style="padding:4px 8px;font-size:11px" onclick="showQR('${v.id}')">QR</button>
@@ -4744,6 +4759,7 @@ function editVehRow(id){
     <td class="td-edit"><input id="ve-mod-${id}" value="${v.model||''}"></td>
     <td class="td-edit"><select id="ve-fir-${id}">${firOpts}</select></td>
     <td class="td-edit"><input id="ve-voz-${id}" value="${v.vozac||''}"></td>
+    <td class="td-edit"><input id="ve-lok-${id}" value="${(v.lokacija||'').replace(/"/g,'&quot;')}" placeholder="npr. ZENICA JUG"></td>
     <td class="td-edit"><label style="display:flex;align-items:center;gap:4px;font-size:11px;white-space:nowrap"><input type="checkbox" id="ve-aktivan-${id}" ${jeAktivan(v)?'checked':''}> Aktivan</label></td>
     <td style="text-align:center;white-space:nowrap">
       <button class="btn btn-p" style="padding:5px 10px;font-size:12px" onclick="saveVehEdit('${id}')">✓</button>
@@ -4763,6 +4779,7 @@ async function saveVehEdit(id){
     model:document.getElementById('ve-mod-'+id).value.trim(),
     firmaId:document.getElementById('ve-fir-'+id).value,
     vozac:document.getElementById('ve-voz-'+id).value.trim(),
+    lokacija:document.getElementById('ve-lok-'+id).value.trim(),
     aktivan:document.getElementById('ve-aktivan-'+id).checked
   };
   try{
@@ -4800,6 +4817,7 @@ function openAddVehicle(){
   document.getElementById('nv-garazni').value='';
   document.getElementById('nv-serijski').value='';
   document.getElementById('nv-voz').value='';
+  if(document.getElementById('nv-lok')) document.getElementById('nv-lok').value='';
   openModal('addVehModal');
 }
 async function saveNewVehicle(){
@@ -4812,7 +4830,7 @@ async function saveNewVehicle(){
   if(S.vozila.find(v=>v.reg===reg)){toast('⚠ Ta registracija već postoji!');return;}
   const napomena=document.getElementById('nv-nap')?document.getElementById('nv-nap').value.trim():'';
   try{
-    const podaci={reg,tip:document.getElementById('nv-tip').value,model:document.getElementById('nv-mod').value.trim(),garazniBr,serijskiBr,firmaId:fir,vozac:document.getElementById('nv-voz').value.trim(),napomena};
+    const podaci={reg,tip:document.getElementById('nv-tip').value,model:document.getElementById('nv-mod').value.trim(),garazniBr,serijskiBr,firmaId:fir,vozac:document.getElementById('nv-voz').value.trim(),lokacija:(document.getElementById('nv-lok')?.value||'').trim(),napomena};
     const ref=await window.FB.addDoc(window.FB.col('vozila'),podaci);
     if(!S.vozila.find(x=>x.id===ref.id)) S.vozila.push({id:ref.id,...podaci}); // optimistički, dok ne stigne potvrda sa servera
     closeModal('addVehModal');renderVozilaTbl();toast('✓ Vozilo dodano!');
