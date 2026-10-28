@@ -381,6 +381,21 @@ body.driver-mode .app{padding-bottom:78px}
 
 /* REPORT BAR */
 .rep-item{padding:9px 0;border-bottom:1px solid var(--bord)}
+body.direktor-mode #main-nav, body.direktor-mode .admin-only, body.direktor-mode #vozac-bottomnav{display:none!important}
+.dir-wrap{max-width:980px;margin:0 auto}
+.dir-kpi{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:14px}
+@media(max-width:760px){.dir-kpi{grid-template-columns:1fr 1fr}}
+.dir-kpi .stat-n{font-size:24px}
+.dir-delta{font-size:12px;font-weight:700;margin-top:6px}
+.dir-up{color:var(--red)} .dir-down{color:var(--acc3)} .dir-flat{color:var(--mut2)}
+.dir-row{display:flex;justify-content:space-between;gap:10px;align-items:baseline;font-size:13px}
+.dir-flag{padding:10px 12px;border-radius:8px;border:1px solid var(--bord2);background:var(--surf2);margin-bottom:8px}
+.dir-flag b{font-size:13px}
+.dir-flag .d{font-size:12px;color:var(--mut2);margin-top:3px;line-height:1.45}
+.dir-trend{display:flex;align-items:flex-end;gap:10px;height:150px;padding-top:10px}
+.dir-trend .col{flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;height:100%;justify-content:flex-end}
+.dir-trend .bar{width:70%;max-width:48px;background:var(--acc);border-radius:4px 4px 0 0;min-height:2px}
+.dir-trend .lbl{font-size:10px;color:var(--mut2)} .dir-trend .val{font-size:10px;font-weight:700;font-variant-numeric:tabular-nums}
 .rep-item:last-child{border-bottom:none}
 .rep-bar-wrap{height:4px;background:var(--bord2);border-radius:2px;margin-top:6px}
 .rep-bar{height:100%;border-radius:2px}
@@ -412,6 +427,7 @@ body.driver-mode .app{padding-bottom:78px}
   body:not(.driver-mode) nav#main-nav{position:fixed;top:58px;left:0;bottom:0;width:220px;flex-direction:column;align-items:stretch;justify-content:flex-start;padding:14px 10px;overflow-y:auto;overflow-x:hidden;border-right:1px solid var(--bord);background:var(--surf);gap:3px;z-index:140}
   body:not(.driver-mode) nav#main-nav .nav-btn{justify-content:flex-start;text-align:left;padding:11px 14px;font-size:12.5px;border-radius:8px}
   body:not(.driver-mode) .app{margin-left:220px;padding-top:74px;max-width:1100px}
+  body.direktor-mode .app{margin-left:auto;margin-right:auto}
 }
 </style>
 </head>
@@ -490,6 +506,27 @@ try{
 </div>
 
 <!-- ═══ TAB: DASHBOARD ═══ -->
+<!-- ═══ TAB: DIREKTOR (samo pregled, bez ikakvog unosa) ═══ -->
+<div class="tab" id="tab-direktor">
+  <div class="dir-wrap">
+    <div class="card" style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+      <div class="card-title" style="margin:0">📊 Pregled goriva</div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <select id="dir-mj" onchange="renderDirektor()" style="padding:8px 10px;background:var(--surf2);color:var(--txt);border:1px solid var(--bord2);border-radius:6px"></select>
+      </div>
+    </div>
+    <div class="dir-kpi" id="dir-kpi"></div>
+    <div class="card"><div class="card-title">🚩 Šta zaslužuje pažnju</div><div id="dir-flags"></div></div>
+    <div class="grid2">
+      <div class="card"><div class="card-title">🏢 Po firmi</div><div id="dir-firme"></div></div>
+      <div class="card"><div class="card-title">📍 Top 5 gradilišta</div><div id="dir-grad"></div></div>
+    </div>
+    <div class="card"><div class="card-title">📈 Zadnjih 6 mjeseci — trošak goriva (KM sa PDV)</div><div id="dir-trend"></div></div>
+    <div class="card"><div class="card-title">🛢️ Stanje cisterni</div><div id="dir-semafor" style="display:flex;gap:10px;flex-wrap:wrap"></div></div>
+    <div style="font-size:11px;color:var(--mut2);text-align:center;margin:6px 0 20px">Samo pregled — podaci se ne mogu mijenjati sa ovog naloga. Iznosi su sa PDV (17%), po nabavnoj cijeni iz faktura.</div>
+  </div>
+</div>
+
 <div class="tab active" id="tab-dashboard">
   <div class="stats" id="dash-stats"></div>
   <div class="card">
@@ -1116,7 +1153,7 @@ try{
       <div class="fg"><label>Korisničko ime *</label><input id="nu-user" placeholder="npr. mirko" autocapitalize="off"></div>
       <div class="fg"><label>Lozinka *</label><input id="nu-pass" type="text" placeholder="min. 6 karaktera"></div>
       <div class="fg"><label>Ime i prezime</label><input id="nu-ime" placeholder="Mirko Mirković"></div>
-      <div class="fg"><label>Uloga</label><select id="nu-role" onchange="document.getElementById('nu-cist-wrap').style.display=this.value==='vozac'?'block':'none'"><option value="vozac">🚛 Vozač</option><option value="admin">👔 Admin</option></select></div>
+      <div class="fg"><label>Uloga</label><select id="nu-role" onchange="document.getElementById('nu-cist-wrap').style.display=this.value==='vozac'?'block':'none'"><option value="vozac">🚛 Vozač</option><option value="admin">👔 Admin</option><option value="direktor">📊 Direktor (samo pregled)</option></select></div>
       <div class="fg full" id="nu-cist-wrap"><label>Dodijeljena cisterna (vozač vidi samo nju)</label><select id="nu-cist"><option value="">— bez dodijeljene cisterne —</option></select></div>
     </div>
     <button class="btn btn-p" onclick="guardedClick(this,kreirajKorisnika)">+ Kreiraj nalog</button>
@@ -1607,9 +1644,15 @@ function applyRole(role){
   // (za slučaj da nije bilo pune odjave/osvježavanja stranice prije ove prijave)
   resetOtpForm(); resetTreca3Form(); sigs={entry:null,tr1:null,tr2:null,treca:null};
   const isAdmin=role==='admin';
-  document.body.classList.toggle('driver-mode',!isAdmin);
-  document.getElementById('vozac-bottomnav').style.display=isAdmin?'none':'flex';
-  if(isAdmin){
+  const isDir=role==='direktor';
+  document.body.classList.toggle('driver-mode',!isAdmin&&!isDir);
+  document.body.classList.toggle('direktor-mode',isDir);
+  document.getElementById('vozac-bottomnav').style.display=(isAdmin||isDir)?'none':'flex';
+  if(isDir){
+    document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+    document.getElementById('tab-direktor').classList.add('active');
+    renderDirektor();
+  }else if(isAdmin){
     document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
     document.getElementById('tab-dashboard').classList.add('active');
     document.querySelectorAll('.nav-btn').forEach(b=>b.classList.remove('active'));
@@ -5353,7 +5396,7 @@ function renderUsersList(){
   el.innerHTML=allUsers.map(u=>{
     const c=u.cisterna_id?gC(u.cisterna_id):null;
     return`<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--bord)">
-    <div><b>${u.puno_ime||u.username}</b> <span class="tag ${u.role==='admin'?'t-b':'t-ok'}" style="margin-left:6px">${u.role==='admin'?'👔 Admin':'🚛 Vozač'}</span>
+    <div><b>${u.puno_ime||u.username}</b> <span class="tag ${u.role==='admin'?'t-b':u.role==='direktor'?'t-f':'t-ok'}" style="margin-left:6px">${u.role==='admin'?'👔 Admin':u.role==='direktor'?'📊 Direktor':'🚛 Vozač'}</span>
     <br><span style="font-size:11px;color:var(--mut2)">korisničko ime: ${u.username}${c?' · cisterna: '+c.reg:(u.role==='vozac'?' · <span style="color:var(--acc2)">bez dodijeljene cisterne</span>':'')}</span></div>
     <button class="btn btn-r" onclick="deaktivirajKorisnika('${u.id}','${u.username}')" title="Ukida pristup (ne briše Auth nalog)">✕</button>
   </div>`;}).join('');
@@ -5484,12 +5527,146 @@ function logAkcija(akcija, detalji){
   }).catch(()=>{}); // tiho zanemari ako ne uspije - ne smije prekinuti glavni tok
 }
 
+// ═══════════════════════════════════════════════
+// DIREKTOR — pregled goriva (samo čitanje, ništa ne upisuje u bazu)
+// ═══════════════════════════════════════════════
+const DIR_PDV=1.17;
+const DIR_MJESECI=['jan','feb','mar','apr','maj','jun','jul','avg','sep','okt','nov','dec'];
+function dirEsc(t){return String(t==null?'':t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function dirKM(n){return (n||0).toLocaleString('bs-BA',{minimumFractionDigits:0,maximumFractionDigits:0})+' KM';}
+function dirL(n){return Math.round(n||0).toLocaleString('bs-BA')+' L';}
+function dirMjOffset(ym,k){const [y,m]=ym.split('-').map(Number);const d=new Date(y,m-1+k,1);return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');}
+function dirMjNaziv(ym){const [y,m]=ym.split('-').map(Number);return DIR_MJESECI[m-1]+' '+y;}
+function dirStavkeMj(ym){ // točenja naših vozila u mjesecu
+  const out=[];
+  S.otpremnice.forEach(o=>{ if(o.stornirano||(o.datum||'').slice(0,7)!==ym) return; (o.stavke||[]).forEach(s=>out.push({o,s})); });
+  return out;
+}
+function dirZbir(ym){
+  let lit=0,km=0,bezCij=0;
+  dirStavkeMj(ym).forEach(({s})=>{ const t=izracunajTrosakStavke(s); lit+=s.litara; km+=t; if(!t) bezCij+=s.litara; });
+  return {lit,km:km*DIR_PDV,bezCij};
+}
+function dirDelta(sad,prije){
+  if(!prije) return '<div class="dir-delta dir-flat">— nema podataka za prošli mjesec</div>';
+  const p=(sad-prije)/prije*100;
+  const cls=Math.abs(p)<3?'dir-flat':(p>0?'dir-up':'dir-down');
+  return `<div class="dir-delta ${cls}">${p>0?'▲':p<0?'▼':'•'} ${Math.abs(p).toFixed(0)}% u odnosu na prošli mjesec</div>`;
+}
+// Prosječna potrošnja vozila u periodu (od-do, uključivo): L/100km ili L/mh. null ako premalo podataka ili nerealno.
+function dirProsjek(kljuc, od, do_){
+  const unosi=[]; let isB=false;
+  S.otpremnice.forEach(o=>{
+    if(o.stornirano) return; const d=(o.datum||'').slice(0,10); if(d<od||d>do_) return;
+    (o.stavke||[]).forEach(s=>{
+      if(stavkaVoziloKljuc(s)!==kljuc) return;
+      isB=stavkaJeMotoSati(s);
+      const val=isB?(s.motoSati!=null?s.motoSati:s.motoSatiK):(s.km!=null?s.km:s.kmKraj);
+      if(val!=null&&!isNaN(val)) unosi.push({val:Number(val),lit:s.litara});
+    });
+  });
+  if(unosi.length<3) return null;
+  unosi.sort((a,b)=>a.val-b.val);
+  const predjeno=unosi[unosi.length-1].val-unosi[0].val;
+  if(!(predjeno>0)) return null;
+  const lit=unosi.slice(0,-1).reduce((a,u)=>a+u.lit,0);
+  const pr=isB?lit/predjeno:lit/predjeno*100;
+  if(isB?(pr<2||pr>60):(pr<5||pr>150)) return null; // vjerovatno greška u kilometraži - ne alarmiraj
+  return {pr,isB,n:unosi.length};
+}
+function renderDirektor(){
+  const sel=document.getElementById('dir-mj'); if(!sel) return;
+  const sad=today().slice(0,7);
+  if(!sel.options.length){
+    for(let k=0;k<12;k++){ const ym=dirMjOffset(sad,-k); sel.innerHTML+=`<option value="${ym}">${k===0?'Ovaj mjesec — ':''}${dirMjNaziv(ym)}</option>`; }
+    sel.value=sad;
+  }
+  const ym=sel.value||sad, ymPrije=dirMjOffset(ym,-1);
+  const od=ym+'-01', do_=dirMjOffset(ym,1)+'-01'; // do_ je isključiv - za poređenje stringova koristimo < do_
+  const z=dirZbir(ym), zP=dirZbir(ymPrije);
+  // Nabavka u mjesecu (fakture)
+  const kup=S.ulazi.filter(u=>u.dobav!=='KOREKCIJA'&&u.litara>0&&(u.datum||'').slice(0,7)===ym);
+  const kupLit=kup.reduce((a,u)=>a+u.litara,0);
+  const sCij=kup.filter(u=>u.cijenaLitra);
+  const prosCij=sCij.length?sCij.reduce((a,u)=>a+u.litara*u.cijenaLitra,0)/sCij.reduce((a,u)=>a+u.litara,0):null;
+  // Gorivo na stanju i procjena vrijednosti (zadnja poznata nabavna cijena)
+  const zadnjaCij=[...S.ulazi].filter(u=>u.cijenaLitra).sort((a,b)=>(b.datum||'').localeCompare(a.datum||''))[0]?.cijenaLitra||0;
+  const naStanju=S.cistijerne.reduce((a,c)=>a+Math.max(0,cisternaStanje(c.id)),0);
+  document.getElementById('dir-kpi').innerHTML=`
+    <div class="stat"><div class="stat-n">${dirKM(z.km)}</div><div class="stat-l">Trošak goriva — ${dirMjNaziv(ym)}</div>${dirDelta(z.km,zP.km)}</div>
+    <div class="stat"><div class="stat-n">${dirL(z.lit)}</div><div class="stat-l">Natočeno našim vozilima</div>${dirDelta(z.lit,zP.lit)}</div>
+    <div class="stat"><div class="stat-n">${prosCij?(prosCij*DIR_PDV).toFixed(3):'—'}</div><div class="stat-l">Prosj. nabavna cijena KM/L (sa PDV)</div><div class="dir-delta dir-flat">kupljeno ${dirL(kupLit)} u mjesecu</div></div>
+    <div class="stat"><div class="stat-n">${dirL(naStanju)}</div><div class="stat-l">Trenutno u cisternama</div><div class="dir-delta dir-flat">${zadnjaCij?'≈ '+dirKM(naStanju*zadnjaCij*DIR_PDV)+' vrijednost':''}</div></div>
+    ${z.bezCij>0?`<div style="grid-column:1/-1;font-size:11px;color:var(--acc2)">⚠ ${dirL(z.bezCij)} točeno iz faktura bez unesene cijene — nije u trošku.</div>`:''}`;
+
+  // Po firmi
+  const poF={};
+  dirStavkeMj(ym).forEach(({s})=>{ const fid=stavkaVehInfo(s).firmaId||'_'; if(!poF[fid])poF[fid]={lit:0,km:0}; poF[fid].lit+=s.litara; poF[fid].km+=izracunajTrosakStavke(s)*DIR_PDV; });
+  const fa=Object.entries(poF).sort((a,b)=>b[1].km-a[1].km||b[1].lit-a[1].lit); const mxF=fa[0]?.[1].km||fa[0]?.[1].lit||1;
+  document.getElementById('dir-firme').innerHTML=fa.length?fa.map(([fid,d])=>{const f=gF(fid);const ukKM=fa.reduce((a,x)=>a+x[1].km,0)||1;return`<div class="rep-item"><div class="dir-row"><b>${dirEsc(f?f.naziv:'bez firme')}</b><span><b>${dirKM(d.km)}</b> · ${dirL(d.lit)}${d.km?` · ${(d.km/ukKM*100).toFixed(0)}%`:''}</span></div><div class="rep-bar-wrap"><div class="rep-bar" style="width:${(d.km||d.lit)/mxF*100}%;background:var(--acc3)"></div></div></div>`;}).join(''):'<div class="empty">Nema točenja u ovom mjesecu</div>';
+
+  // Top 5 gradilišta (uz podjelu na više gradilišta ako je zadana)
+  const poG={};
+  dirStavkeMj(ym).forEach(({o,s})=>{
+    const t=izracunajTrosakStavke(s)*DIR_PDV;
+    const rasp=(s.gradSplit&&s.gradSplit.length)?s.gradSplit:[{gradId:o.gradId,postotak:100}];
+    rasp.forEach(sp=>{const u=sp.postotak/100; if(!poG[sp.gradId])poG[sp.gradId]={lit:0,km:0}; poG[sp.gradId].lit+=s.litara*u; poG[sp.gradId].km+=t*u;});
+  });
+  const ga=Object.entries(poG).sort((a,b)=>b[1].km-a[1].km||b[1].lit-a[1].lit).slice(0,5); const mxG=ga[0]?.[1].km||ga[0]?.[1].lit||1;
+  document.getElementById('dir-grad').innerHTML=ga.length?ga.map(([gid,d])=>{const g=gG(gid);return`<div class="rep-item"><div class="dir-row"><b>${dirEsc(g?g.naziv:'?')}</b><span><b>${dirKM(d.km)}</b> · ${dirL(d.lit)}</span></div><div class="rep-bar-wrap"><div class="rep-bar" style="width:${(d.km||d.lit)/mxG*100}%;background:var(--acc2)"></div></div></div>`;}).join(''):'<div class="empty">Nema točenja u ovom mjesecu</div>';
+
+  // Trend 6 mjeseci
+  const mj6=[...Array(6)].map((_,i)=>dirMjOffset(ym,i-5));
+  const t6=mj6.map(m=>({m,...dirZbir(m)})); const mxT=Math.max(...t6.map(x=>x.km),1);
+  document.getElementById('dir-trend').innerHTML=`<div class="dir-trend">${t6.map(x=>`<div class="col"><div class="val">${x.km?Math.round(x.km/1000)+'k':'—'}</div><div class="bar" style="height:${x.km/mxT*100}%;${x.m===ym?'':'opacity:.55'}"></div><div class="lbl">${dirMjNaziv(x.m).replace(' 20',' ’')}</div></div>`).join('')}</div>
+    <div style="font-size:11px;color:var(--mut2);margin-top:6px">Vrijednosti u hiljadama KM (sa PDV). Istaknut je izabrani mjesec.</div>`;
+
+  // Stanje cisterni
+  renderCisternaSemafor('dir-semafor');
+
+  // ── Crvene zastavice ──
+  const flags=[];
+  // 1) Skok potrošnje: izabrani mjesec naspram prethodna 3 mjeseca
+  const odBase=dirMjOffset(ym,-3)+'-01', doBase=dirMjOffset(ym,0)+'-00';
+  const doMj=dirMjOffset(ym,1)+'-00';
+  const kljucevi=new Set(dirStavkeMj(ym).map(({s})=>stavkaVoziloKljuc(s)));
+  const skokovi=[];
+  kljucevi.forEach(k=>{
+    const a=dirProsjek(k,od,doMj), b=dirProsjek(k,odBase,doBase);
+    if(!a||!b) return;
+    const p=(a.pr-b.pr)/b.pr*100;
+    if(p>=20){ const v=gV(k); const reg=v?v.reg:String(k).replace(/^reg:/,''); skokovi.push({reg,a,b,p}); }
+  });
+  skokovi.sort((x,y)=>y.p-x.p);
+  if(skokovi.length) flags.push({ico:'⛽',nas:`${skokovi.length} vozila troše primjetno više nego inače`,txt:skokovi.slice(0,6).map(x=>`<b>${dirEsc(x.reg)}</b>: ${x.a.pr.toFixed(1)} ${x.a.isB?'L/mh':'L/100km'} (inače ${x.b.pr.toFixed(1)}, <span class="dir-up">+${x.p.toFixed(0)}%</span>)`).join('<br>')+(skokovi.length>6?`<br>… i još ${skokovi.length-6}`:'')+'<br><i>Prije zaključka provjeriti da kilometraža nije pogrešno upisana.</i>'});
+  // 2) Brojač pumpe vs unesene otpremnice
+  const brR=S.brojaci.filter(b=>b.pocetak!=null&&b.kraj!=null&&(b.datum||'').slice(0,7)===ym).map(b=>({b,raz:(b.kraj-b.pocetak)-izdatoNaDan(b.cistijernId,b.datum)})).filter(x=>Math.abs(x.raz)>TOLERANCIJA_BROJAC);
+  if(brR.length){ const fali=brR.filter(x=>x.raz>0).reduce((a,x)=>a+x.raz,0); flags.push({ico:'🔢',nas:`Brojač pumpe se ne slaže sa otpremnicama — ${brR.length} dan(a)`,txt:brR.slice(0,6).map(x=>`${x.b.datum} · ${dirEsc(gC(x.b.cistijernId)?.reg||'?')}: ${x.raz>0?'<span class="dir-up">fali '+x.raz.toFixed(0)+' L</span> (natočeno a nije upisano?)':'višak '+Math.abs(x.raz).toFixed(0)+' L'}`).join('<br>')+(fali?`<br>Ukupno neobjašnjeno: <b>${dirL(fali)}</b>`:'')}); }
+  // 3) Korekcije stanja cisterni
+  const kor=S.ulazi.filter(u=>u.dobav==='KOREKCIJA'&&(u.datum||'').slice(0,7)===ym);
+  if(kor.length){ const minus=kor.filter(u=>u.litara<0).reduce((a,u)=>a+u.litara,0), plus=kor.filter(u=>u.litara>0).reduce((a,u)=>a+u.litara,0);
+    flags.push({ico:'⚖️',nas:`${kor.length} korekcija stanja cisterni`,txt:`${minus?`Umanjeno: <b class="dir-up">${dirL(minus)}</b>`:''}${minus&&plus?' · ':''}${plus?`Dodano: <b>+${dirL(plus)}</b>`:''}<br>`+kor.slice(0,5).map(u=>`${(u.datum||'').slice(0,10)} · ${dirEsc(gC(u.cistijernId)?.reg||'?')}: ${u.litara>0?'+':''}${u.litara} L — ${dirEsc(u.nap||'bez obrazloženja')}`).join('<br>')}); }
+  // 4) Treća lica - za fakturisanje
+  const o3=S.otpremnice3.filter(o=>!o.stornirano&&(o.datum||'').slice(0,7)===ym);
+  if(o3.length){ const poFirmi={}; o3.forEach(o=>{const f=S.treceLiceFirme.find(x=>x.id===o.treceLiceId); const n=f?f.naziv:'?'; if(!poFirmi[n])poFirmi[n]={lit:0,km:0}; (o.stavke||[]).forEach(s=>{poFirmi[n].lit+=s.litara; poFirmi[n].km+=izracunajTrosakStavke(s)*DIR_PDV;});});
+    const uk=Object.values(poFirmi).reduce((a,x)=>({lit:a.lit+x.lit,km:a.km+x.km}),{lit:0,km:0});
+    flags.push({ico:'🏢',nas:`Gorivo dato drugim firmama: ${dirL(uk.lit)} ≈ ${dirKM(uk.km)} nabavne vrijednosti — provjeriti da je fakturisano`,txt:Object.entries(poFirmi).sort((a,b)=>b[1].lit-a[1].lit).map(([n,x])=>`${dirEsc(n)}: ${dirL(x.lit)} (≈ ${dirKM(x.km)})`).join('<br>')}); }
+  // 5) Vozila koja toče iz cisterni, a nisu sipala 14+ dana
+  const zadnje={};
+  S.otpremnice.forEach(o=>{ if(o.stornirano)return; (o.stavke||[]).forEach(s=>{ const k=stavkaVoziloKljuc(s); if(!zadnje[k]||o.datum>zadnje[k]) zadnje[k]=o.datum; }); });
+  const danas=new Date(today());
+  const stoje=S.vozila.filter(v=>jeAktivan(v)&&v.tip!=='malo'&&zadnje[v.id]).map(v=>({v,dana:Math.round((danas-new Date(zadnje[v.id].slice(0,10)))/864e5)})).filter(x=>x.dana>=14).sort((a,b)=>b.dana-a.dana);
+  if(stoje.length) flags.push({ico:'⏸️',nas:`${stoje.length} vozila/mašina nisu sipala iz cisterni 14+ dana`,txt:stoje.slice(0,8).map(x=>`<b>${dirEsc(x.v.reg)}</b>${x.v.model?' '+dirEsc(x.v.model):''} — ${x.dana} dana${x.v.lokacija?' · '+dirEsc(x.v.lokacija):''}`).join('<br>')+(stoje.length>8?`<br>… i još ${stoje.length-8}`:'')+'<br><i>Stoje u kvaru, rade negdje drugo ili toče mimo evidencije?</i>'});
+  document.getElementById('dir-flags').innerHTML=flags.length?flags.map(f=>`<div class="dir-flag"><b>${f.ico} ${f.nas}</b><div class="d">${f.txt}</div></div>`).join(''):'<div class="empty">✅ Nema ničeg neobičnog za ovaj mjesec.</div>';
+}
+
 function renderAll(){
   populateAll();populateTrecaFirme();renderLists();renderVozilaTbl();
   renderDanas();renderTr();renderUl();renderTlLista();renderPregled();renderIzv();
   populateTure();renderTureDana();renderTureLista();
   populateBrojacCist();ucitajBrojac(false);
   if(currentUser&&currentUser.role==='admin') renderDashboard();
+  if(currentUser&&currentUser.role==='direktor') renderDirektor();
 }
 
 async function doLogin(ev){
