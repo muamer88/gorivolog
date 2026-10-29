@@ -956,10 +956,10 @@ try{
       <div id="tk-gorivo"></div>
 
       <div class="card-title" style="margin-top:16px;font-size:12px">📋 Unos tura</div>
-      <div class="signal sig-tip" style="font-size:12px"><span>Enter = sljedeće polje. Enter na <b>m³</b> = nova tura ista kao prethodna (za "‑‖‑" samo Enter). Klik na relaciju dole odmah doda turu. <b>km</b> = put pod teretom (bez praznog povratka).</span></div>
+      <div class="signal sig-tip" style="font-size:12px"><span>Enter = sljedeće polje. Enter na <b>km prazan</b> = nova tura ista kao prethodna (za "‑‖‑" samo Enter). Klik na relaciju dole odmah doda turu. <b>km prazan</b> se sam popuni kao km pun (povratak istim putem) — promijeni ako nije tako.</span></div>
       <div id="tk-brze" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px"></div>
       <div style="overflow-x:auto"><table id="tk-tbl" style="width:100%;border-collapse:collapse;font-size:14px">
-        <thead><tr><th style="width:28px">#</th><th style="width:135px">Datum</th><th style="min-width:150px">Za koga / gradilište</th><th style="min-width:120px">Odakle</th><th style="min-width:120px">Dokle</th><th style="width:70px">km</th><th style="min-width:100px">Materijal</th><th style="width:70px">m³</th><th style="width:30px"></th></tr></thead>
+        <thead><tr><th style="width:28px">#</th><th style="width:135px">Datum</th><th style="min-width:150px">Za koga / gradilište</th><th style="min-width:120px">Odakle</th><th style="min-width:120px">Dokle</th><th style="min-width:100px">Materijal</th><th style="width:70px">m³</th><th style="width:72px">km pun</th><th style="width:72px">km prazan</th><th style="width:30px"></th></tr></thead>
         <tbody id="tk-rows"></tbody></table></div>
       <div class="btn-row" style="margin-top:10px">
         <button type="button" class="btn btn-s" onclick="tkDodajRed(true)">➕ Nova tura</button>
@@ -1898,7 +1898,8 @@ function tuFilReset(){
 // Snima u istu kolekciju "ture" (isti oblik + odNaziv/doNaziv/narucilac/km). Gorivo se samo ČITA.
 // ═══════════════════════════════════════════════
 let tkVozId='', tkRedovi=[];
-const TK_POLJA=['datum','narucilac','od','do','km','mat','kol'];
+const TK_POLJA=['datum','narucilac','od','do','mat','kol','km','kmp'];
+function tuKmUk(t){return (Number(t.km)||0)+(Number(t.kmPrazan)||0);}
 function tkInit(){
   const od=document.getElementById('tk-od'), dd=document.getElementById('tk-do');
   if(od&&!od.value) od.value=today().slice(0,8)+'01';
@@ -1931,14 +1932,14 @@ function tkDatalists(){
 }
 function tkNoviRed(pret){
   const v=gV(tkVozId); const zadnja=[...tkTureVozila()].sort((a,b)=>String(b.unesenoVrijeme||b.datum).localeCompare(String(a.unesenoVrijeme||a.datum)))[0];
-  if(pret) return {id:'r'+uid(),docId:'',datum:pret.datum,narucilac:pret.narucilac,od:pret.od,do:pret.do,km:pret.km,mat:pret.mat,kol:pret.kol};
-  return {id:'r'+uid(),docId:'',datum:document.getElementById('tk-od').value||today(),narucilac:zadnja?.narucilac||'',od:'',do:'',km:'',mat:zadnja?.materijal||'',kol:zadnja?String(zadnja.kolicina||''):''};
+  if(pret) return {id:'r'+uid(),docId:'',datum:pret.datum,narucilac:pret.narucilac,od:pret.od,do:pret.do,km:pret.km,kmp:pret.kmp,kmpRucno:pret.kmpRucno,mat:pret.mat,kol:pret.kol};
+  return {id:'r'+uid(),docId:'',datum:document.getElementById('tk-od').value||today(),narucilac:zadnja?.narucilac||'',od:'',do:'',km:'',kmp:'',kmpRucno:false,mat:zadnja?.materijal||'',kol:zadnja?String(zadnja.kolicina||''):''};
 }
 function tkDodajRed(fokus){
   const pret=tkRedovi[tkRedovi.length-1];
   const r=tkNoviRed(pret&&(pret.od||pret.do)?pret:null);
   tkRedovi.push(r); tkRenderRedovi();
-  if(fokus){const el=document.getElementById(`tk-${r.id}-${pret&&(pret.od||pret.do)?'kol':'od'}`); if(el){el.focus();el.select&&el.select();}}
+  if(fokus){const el=document.getElementById(`tk-${r.id}-${pret&&(pret.od||pret.do)?'kmp':'od'}`); if(el){el.focus();el.select&&el.select();}}
   return r;
 }
 function tkRenderRedovi(){
@@ -1950,21 +1951,25 @@ function tkRenderRedovi(){
     <td>${inp(r,'narucilac','list="tk-dl-nar" placeholder="npr. BOSSIL – Zenica Jug"')}</td>
     <td>${inp(r,'od','list="tk-dl-lok" placeholder="odakle"')}</td>
     <td>${inp(r,'do','list="tk-dl-lok" placeholder="dokle"')}</td>
-    <td>${inp(r,'km','type="number" inputmode="decimal" min="0"')}</td>
     <td>${inp(r,'mat','list="tk-dl-mat" placeholder="npr. nasip"')}</td>
     <td>${inp(r,'kol','type="number" inputmode="decimal" min="0" step=".5" style="font-weight:800;color:var(--acc)"')}</td>
+    <td>${inp(r,'km','type="number" inputmode="decimal" min="0"')}</td>
+    <td>${inp(r,'kmp','type="number" inputmode="decimal" min="0"')}</td>
     <td><button type="button" class="btn btn-r" tabindex="-1" onclick="tkObrisiRed('${r.id}')">✕</button></td></tr>`).join('');
   tkBrzeRelacije();
 }
-function tkSet(id,f,val){const r=tkRedovi.find(x=>x.id===id); if(r){r[f]=val; const el=document.getElementById(`tk-${id}-${f}`); if(el) el.classList.remove('err');}}
+function tkSet(id,f,val){const r=tkRedovi.find(x=>x.id===id); if(!r) return; r[f]=val; const el=document.getElementById(`tk-${id}-${f}`); if(el) el.classList.remove('err');
+  if(f==='kmp') r.kmpRucno=true;
+  if(f==='km' && !r.kmpRucno){ r.kmp=val; const k=document.getElementById(`tk-${id}-kmp`); if(k) k.value=val; } // prazan povratak = isti put dok se ne promijeni
+}
 function tkObrisiRed(id){ tkRedovi=tkRedovi.filter(r=>r.id!==id); if(!tkRedovi.length) tkDodajRed(false); else tkRenderRedovi(); }
 function tkKey(e,id,f){
   if(e.key!=='Enter') return;
   e.preventDefault();
   const i=TK_POLJA.indexOf(f);
-  if(f==='kol'){
+  if(f==='kmp'){
     const idx=tkRedovi.findIndex(r=>r.id===id);
-    if(idx<tkRedovi.length-1){const n=document.getElementById(`tk-${tkRedovi[idx+1].id}-kol`); n&&n.focus();}
+    if(idx<tkRedovi.length-1){const n=document.getElementById(`tk-${tkRedovi[idx+1].id}-kmp`); n&&n.focus();}
     else tkDodajRed(true);
     return;
   }
@@ -1974,9 +1979,9 @@ function tkKey(e,id,f){
 function tkBrzeRelacije(){
   const el=document.getElementById('tk-brze'); if(!el) return;
   const m={};
-  tkTureVozila().forEach(t=>{const k=tuOd(t)+' → '+tuDo(t); if(!m[k]) m[k]={n:0,od:tuOd(t),do:tuDo(t),km:t.km,mat:t.materijal,kol:t.kolicina}; m[k].n++;});
+  tkTureVozila().forEach(t=>{const k=tuOd(t)+' → '+tuDo(t); if(!m[k]) m[k]={n:0,od:tuOd(t),do:tuDo(t),km:t.km,kmp:t.kmPrazan,mat:t.materijal,kol:t.kolicina}; m[k].n++;});
   const top=Object.values(m).sort((a,b)=>b.n-a.n).slice(0,8);
-  el.innerHTML=top.length?'<span style="font-size:11px;color:var(--mut2);align-self:center">Česte relacije:</span>'+top.map((x,i)=>`<button type="button" class="btn btn-qr" style="padding:6px 10px;font-size:12px" onclick="tkKlikRelacija(${i})">${tuEsc(x.od)} → ${tuEsc(x.do)}${x.km?' · '+x.km+' km':''}</button>`).join(''):'';
+  el.innerHTML=top.length?'<span style="font-size:11px;color:var(--mut2);align-self:center">Česte relacije:</span>'+top.map((x,i)=>`<button type="button" class="btn btn-qr" style="padding:6px 10px;font-size:12px" onclick="tkKlikRelacija(${i})">${tuEsc(x.od)} → ${tuEsc(x.do)}${x.km?' · '+x.km+(x.kmp!=null&&x.kmp!==''&&x.kmp!==x.km?'/'+x.kmp:'')+' km':''}</button>`).join(''):'';
   el._top=top;
 }
 function tkKlikRelacija(i){
@@ -1984,13 +1989,13 @@ function tkKlikRelacija(i){
   let r=tkRedovi[tkRedovi.length-1];
   if(r && (r.od||r.do)){ r=tkNoviRed(r); tkRedovi.push(r); }
   else if(!r){ r=tkNoviRed(null); tkRedovi.push(r); }
-  r.od=x.od; r.do=x.do; if(x.km!=null&&x.km!=='') r.km=String(x.km); if(!r.mat&&x.mat) r.mat=x.mat; if(!r.kol&&x.kol) r.kol=String(x.kol);
+  r.od=x.od; r.do=x.do; if(x.km!=null&&x.km!=='') r.km=String(x.km); if(x.kmp!=null&&x.kmp!==''){r.kmp=String(x.kmp);r.kmpRucno=String(x.kmp)!==String(x.km);} else if(r.km){r.kmp=r.km;r.kmpRucno=false;} if(!r.mat&&x.mat) r.mat=x.mat; if(!r.kol&&x.kol) r.kol=String(x.kol);
   tkRenderRedovi();
-  const el=document.getElementById(`tk-${r.id}-kol`); el&&el.focus();
+  const el=document.getElementById(`tk-${r.id}-kmp`); el&&el.focus();
 }
 async function tkSacuvaj(){
   const v=gV(tkVozId); if(!v){toast('⚠ Izaberi kamion.');return;}
-  const zaSnimanje=tkRedovi.filter(r=>r.od||r.do||r.km||r.mat);
+  const zaSnimanje=tkRedovi.filter(r=>r.od||r.do||r.km||r.kmp);
   if(!zaSnimanje.length){toast('⚠ Nema unesenih tura.');return;}
   let lose=0;
   zaSnimanje.forEach(r=>{['datum','od','do'].forEach(f=>{if(!String(r[f]||'').trim()){lose++;document.getElementById(`tk-${r.id}-${f}`)?.classList.add('err');}});
@@ -2007,7 +2012,7 @@ async function tkSacuvaj(){
       const od=r.od.trim(), dd=r.do.trim();
       const podaci={datum:r.datum, voziloId:v.id, vozac:v.vozac||'', brojPN:'',
         odId:gByNaziv(od)?.id||'', doId:gByNaziv(dd)?.id||'', odNaziv:od, doNaziv:dd,
-        km:r.km===''?null:Number(r.km), materijal:String(r.mat||'').trim(), kolicina:Number(r.kol), jedinica:'m3',
+        km:r.km===''?null:Number(r.km), kmPrazan:(r.kmp===''||r.kmp==null)?null:Number(r.kmp), materijal:String(r.mat||'').trim(), kolicina:Number(r.kol), jedinica:'m3',
         porijeklo:'', zakoga:'', firmaId:'', privatnoIme:'', narucilac:String(r.narucilac||'').trim(),
         brojOtp:'', mjerenje:'procjena', napomena:'', unioKorisnik:currentUser?currentUser.username:'', unesenoVrijeme:new Date().toISOString()};
       await window.FB.setDoc(window.FB.docRef('ture',r.docId),podaci);
@@ -2035,11 +2040,11 @@ function tkGorivo(){
   return {st,lit,km,predjeno,isB:st[0]?.isB};
 }
 function tkPivot(lista,g){
-  const ukKm=lista.reduce((a,t)=>a+(Number(t.km)||0),0);
-  const udio=t=>ukKm>0?(Number(t.km)||0)/ukKm:1/lista.length; // gorivo se dijeli po km pod teretom (ili po broju tura ako km nisu upisani)
-  const grupa=fn=>{const m={};lista.forEach(t=>{const k=fn(t)||'—';if(!m[k])m[k]={ture:0,m3:0,km:0,lit:0,kmn:0};m[k].ture++;m[k].m3+=Number(t.kolicina)||0;m[k].km+=Number(t.km)||0;m[k].lit+=g.lit*udio(t);m[k].kmn+=g.km*udio(t);});return Object.entries(m).sort((a,b)=>b[1].ture-a[1].ture);};
+  const ukKm=lista.reduce((a,t)=>a+tuKmUk(t),0);
+  const udio=t=>ukKm>0?tuKmUk(t)/ukKm:1/lista.length; // gorivo se dijeli po UKUPNIM km (pun + prazan), ili po broju tura ako km nisu upisani
+  const grupa=fn=>{const m={};lista.forEach(t=>{const k=fn(t)||'—';if(!m[k])m[k]={ture:0,m3:0,km:0,kmp:0,kmu:0,lit:0,kmn:0};m[k].ture++;m[k].m3+=Number(t.kolicina)||0;m[k].km+=Number(t.km)||0;m[k].kmp+=Number(t.kmPrazan)||0;m[k].kmu+=tuKmUk(t);m[k].lit+=g.lit*udio(t);m[k].kmn+=g.km*udio(t);});return Object.entries(m).sort((a,b)=>b[1].ture-a[1].ture);};
   return {ukKm,rel:grupa(t=>tuOd(t)+' → '+tuDo(t)),nar:grupa(t=>tuOpisZaKoga(t)),mat:grupa(t=>t.materijal),lok:grupa(t=>tuDo(t)),
-    uk:{ture:lista.length,m3:lista.reduce((a,t)=>a+(Number(t.kolicina)||0),0),km:ukKm}};
+    uk:{ture:lista.length,m3:lista.reduce((a,t)=>a+(Number(t.kolicina)||0),0),km:lista.reduce((a,t)=>a+(Number(t.km)||0),0),kmp:lista.reduce((a,t)=>a+(Number(t.kmPrazan)||0),0),kmu:ukKm}};
 }
 function tkRenderPodaci(){
   if(!tkVozId||!document.getElementById('tk-gorivo')) return;
@@ -2050,12 +2055,24 @@ function tkRenderPodaci(){
   const lista=tkTureVozila().filter(t=>tkUPeriodu(t.datum)).sort((a,b)=>String(a.datum).localeCompare(String(b.datum))||String(a.unesenoVrijeme||'').localeCompare(String(b.unesenoVrijeme||'')));
   if(!lista.length){document.getElementById('tk-pivot').innerHTML='<div class="empty">Nema sačuvanih tura u periodu.</div>';document.getElementById('tk-lista').innerHTML='';return;}
   const p=tkPivot(lista,g);
-  const tab=(naslov,red,saGorivom)=>`<table class="tk-piv"><thead><tr><th>${naslov}</th><th style="text-align:right">Ture</th><th style="text-align:right">m³</th><th style="text-align:right">km pod teretom</th>${saGorivom?'<th style="text-align:right">Gorivo L</th><th style="text-align:right">Gorivo KM</th>':''}</tr></thead><tbody>${red.map(([k,x])=>`<tr><td>${tuEsc(k)}</td><td class="n">${x.ture}</td><td class="n">${x.m3.toLocaleString('bs-BA')}</td><td class="n">${x.km.toLocaleString('bs-BA')}</td>${saGorivom?`<td class="n">${g.lit?Math.round(x.lit).toLocaleString('bs-BA'):'—'}</td><td class="n">${g.km?x.kmn.toFixed(2):'—'}</td>`:''}</tr>`).join('')}
-    <tr class="uk"><td>UKUPNO</td><td class="n">${p.uk.ture}</td><td class="n">${p.uk.m3.toLocaleString('bs-BA')}</td><td class="n">${p.uk.km.toLocaleString('bs-BA')}</td>${saGorivom?`<td class="n">${g.lit?Math.round(g.lit).toLocaleString('bs-BA'):'—'}</td><td class="n">${g.km?g.km.toFixed(2):'—'}</td>`:''}</tr></tbody></table>`;
-  document.getElementById('tk-pivot').innerHTML=
+  const N=x=>Number(x||0).toLocaleString('bs-BA');
+  const tab=(naslov,red,saGorivom)=>`<table class="tk-piv"><thead><tr><th>${naslov}</th><th style="text-align:right">Ture</th><th style="text-align:right">m³</th><th style="text-align:right">km pun</th><th style="text-align:right">km prazan</th><th style="text-align:right">km ukupno</th>${saGorivom?'<th style="text-align:right">Gorivo L</th><th style="text-align:right">Gorivo KM</th>':''}</tr></thead><tbody>${red.map(([k,x])=>`<tr><td>${tuEsc(k)}</td><td class="n">${x.ture}</td><td class="n">${N(x.m3)}</td><td class="n">${N(x.km)}</td><td class="n">${N(x.kmp)}</td><td class="n"><b>${N(x.kmu)}</b></td>${saGorivom?`<td class="n">${g.lit?Math.round(x.lit).toLocaleString('bs-BA'):'—'}</td><td class="n">${g.km?x.kmn.toFixed(2):'—'}</td>`:''}</tr>`).join('')}
+    <tr class="uk"><td>UKUPNO</td><td class="n">${p.uk.ture}</td><td class="n">${N(p.uk.m3)}</td><td class="n">${N(p.uk.km)}</td><td class="n">${N(p.uk.kmp)}</td><td class="n">${N(p.uk.kmu)}</td>${saGorivom?`<td class="n">${g.lit?Math.round(g.lit).toLocaleString('bs-BA'):'—'}</td><td class="n">${g.km?g.km.toFixed(2):'—'}</td>`:''}</tr></tbody></table>`;
+  // Kontrola: km iz tura naspram km po brojilu sa sipanja
+  let kontrola='';
+  if(g.predjeno!=null && !g.isB && p.uk.kmu>0){
+    const raz=g.predjeno-p.uk.kmu, pct=g.predjeno>0?Math.abs(raz)/g.predjeno*100:0, ok=pct<=10;
+    kontrola=`<div class="signal ${ok?'sig-ok':'sig-warn'}" style="font-size:12.5px"><span>${ok?'✅':'⚠️'} Ture: <b>${N(p.uk.kmu)} km</b> · Brojilo: <b>${N(g.predjeno)} km</b> · Razlika: <b>${N(Math.round(raz))} km (${pct.toFixed(0)}%)</b>${ok?' — u redu (dolazak na prvu lokaciju, povratak u bazu, put do cisterne).':' — vjerovatno nije upisana neka tura ili prazna vožnja.'}<br><span style="font-size:11px;opacity:.8">Brojilo se računa od prvog do zadnjeg sipanja u periodu.</span></span></div>`;
+  }
+  document.getElementById('tk-pivot').innerHTML=kontrola+
     tab('Relacija',p.rel,true)+tab('Za koga',p.nar,true)+tab('Lokacija (istovar)',p.lok,false)+tab('Materijal',p.mat,false)+
-    `<div style="font-size:11.5px;color:var(--mut2)">Gorivo je raspoređeno ${p.ukKm>0?'srazmjerno km pod teretom':'jednako po turi (km nisu upisani)'}.${g.predjeno!=null&&!g.isB?` Km pod teretom: <b>${p.ukKm}</b> · po brojilu vozila: <b>${g.predjeno}</b> (brojilo uključuje i prazan povratak).`:''}${g.lit&&p.uk.ture?` · Prosjek: <b>${(g.lit/p.uk.ture).toFixed(1)} L po turi</b>${p.uk.m3?`, ${(g.lit/p.uk.m3).toFixed(2)} L/m³`:''}`:''}</div>`;
-  document.getElementById('tk-lista').innerHTML=`<details><summary style="cursor:pointer;font-size:12.5px;color:var(--acc3)">Pojedinačne ture (${lista.length})</summary><div class="tw" style="margin-top:6px"><table><thead><tr><th>Datum</th><th>Za koga</th><th>Relacija</th><th>km</th><th>Materijal</th><th>m³</th><th></th></tr></thead><tbody>${lista.map(t=>`<tr><td style="white-space:nowrap">${tuEsc(t.datum)}</td><td>${tuEsc(tuOpisZaKoga(t))}</td><td>${tuEsc(tuOd(t))} → ${tuEsc(tuDo(t))}</td><td>${t.km??'—'}</td><td>${tuEsc(t.materijal||'—')}</td><td>${t.kolicina}</td><td><button class="btn btn-r" onclick="obrisiTuru('${t.id}')">✕</button></td></tr>`).join('')}</tbody></table></div></details>`;
+    `<div style="font-size:11.5px;color:var(--mut2)">Gorivo je raspoređeno ${p.ukKm>0?'srazmjerno ukupnim km (pun + prazan)':'jednako po turi (km nisu upisani)'}.${g.lit&&p.uk.ture?` Prosjek: <b>${(g.lit/p.uk.ture).toFixed(1)} L po turi</b>${p.uk.m3?`, ${(g.lit/p.uk.m3).toFixed(2)} L/m³`:''}${p.uk.kmu?`, ${(g.lit/p.uk.kmu*100).toFixed(1)} L/100km`:''}`:''}</div>`;
+  document.getElementById('tk-lista').innerHTML=`<details><summary style="cursor:pointer;font-size:12.5px;color:var(--acc3)">Pojedinačne ture (${lista.length})</summary><div class="tw" style="margin-top:6px"><table><thead><tr><th>Datum</th><th>Za koga</th><th>Relacija</th><th>Materijal</th><th>m³</th><th>km pun</th><th>km prazan</th><th></th></tr></thead><tbody>${lista.map(t=>`<tr><td style="white-space:nowrap">${tuEsc(t.datum)}</td><td>${tuEsc(tuOpisZaKoga(t))}</td><td>${tuEsc(tuOd(t))} → ${tuEsc(tuDo(t))}</td><td>${tuEsc(t.materijal||'—')}</td><td>${t.kolicina}</td><td>${t.km??'—'}</td><td><input class="tk-in" style="width:70px;padding:3px 5px;font-size:12px" type="number" min="0" value="${t.kmPrazan??''}" placeholder="—" title="km prazan — izmjena se snima odmah" onchange="tkSnimiKmPrazan('${t.id}',this.value)"></td><td><button class="btn btn-r" onclick="obrisiTuru('${t.id}')">✕</button></td></tr>`).join('')}</tbody></table></div></details>`;
+}
+async function tkSnimiKmPrazan(id,val){
+  const v=val===''?null:Number(val);
+  try{ await window.FB.setDoc(window.FB.docRef('ture',id),{kmPrazan:v},{merge:true}); const t=S.ture.find(x=>x.id===id); if(t) t.kmPrazan=v; tkRenderPodaci(); toast('✓ km prazan sačuvan'); }
+  catch(e){ toast('⚠ Greška: '+e.message,4000); }
 }
 function tkPodaciZaIzvoz(){
   const v=gV(tkVozId); if(!v){toast('⚠ Izaberi kamion.');return null;}
@@ -2069,10 +2086,10 @@ function tkExcel(){
   const d=tkPodaciZaIzvoz(); if(!d) return;
   const wb=XLSX.utils.book_new();
   const naslov=[`Ture — ${d.v.reg}${d.v.garazniBr?' ('+d.v.garazniBr+')':''} — ${d.period}`];
-  const s1=[naslov,[],['Datum','Za koga','Odakle','Dokle','km pod teretom','Materijal','m³']].concat(d.lista.map(t=>[t.datum,tuOpisZaKoga(t),tuOd(t),tuDo(t),t.km??'',t.materijal||'',t.kolicina]));
-  s1.push([],['UKUPNO','','','',d.p.uk.km,'',d.p.uk.m3]);
+  const s1=[naslov,[],['Datum','Za koga','Odakle','Dokle','Materijal','m³','km pun','km prazan','km ukupno']].concat(d.lista.map(t=>[t.datum,tuOpisZaKoga(t),tuOd(t),tuDo(t),t.materijal||'',t.kolicina,t.km??'',t.kmPrazan??'',tuKmUk(t)]));
+  s1.push([],['UKUPNO','','','','',d.p.uk.m3,d.p.uk.km,d.p.uk.kmp,d.p.uk.kmu],[],['Km po brojilu (gorivo)','','','','','','','',d.g.predjeno??'']);
   XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(s1),'Ture');
-  const piv=(red,saG)=>[[ '', 'Ture','m³','km pod teretom',...(saG?['Gorivo L','Gorivo KM']:[])]].concat(red.map(([k,x])=>[k,x.ture,x.m3,x.km,...(saG?[+x.lit.toFixed(1),+x.kmn.toFixed(2)]:[])]));
+  const piv=(red,saG)=>[[ '', 'Ture','m³','km pun','km prazan','km ukupno',...(saG?['Gorivo L','Gorivo KM']:[])]].concat(red.map(([k,x])=>[k,x.ture,x.m3,x.km,x.kmp,x.kmu,...(saG?[+x.lit.toFixed(1),+x.kmn.toFixed(2)]:[])]));
   XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([naslov,[],...piv(d.p.rel,true)]),'Po relaciji');
   XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([naslov,[],...piv(d.p.nar,true)]),'Po naručiocu');
   XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([naslov,[],...piv(d.p.lok,false)]),'Po lokaciji');
@@ -2084,12 +2101,12 @@ function tkExcel(){
 function tkPdf(){
   const d=tkPodaciZaIzvoz(); if(!d) return;
   const e=tuEsc, n=x=>Number(x||0).toLocaleString('bs-BA');
-  const piv=(nas,red,saG)=>`<h3>${nas}</h3><table><tr><th></th><th>Ture</th><th>m³</th><th>km pod teretom</th>${saG?'<th>Gorivo L</th><th>Gorivo KM</th>':''}</tr>${red.map(([k,x])=>`<tr><td>${e(k)}</td><td class="r">${x.ture}</td><td class="r">${n(x.m3)}</td><td class="r">${n(x.km)}</td>${saG?`<td class="r">${Math.round(x.lit)}</td><td class="r">${x.kmn.toFixed(2)}</td>`:''}</tr>`).join('')}<tr class="u"><td>UKUPNO</td><td class="r">${d.p.uk.ture}</td><td class="r">${n(d.p.uk.m3)}</td><td class="r">${n(d.p.uk.km)}</td>${saG?`<td class="r">${Math.round(d.g.lit)}</td><td class="r">${d.g.km.toFixed(2)}</td>`:''}</tr></table>`;
+  const piv=(nas,red,saG)=>`<h3>${nas}</h3><table><tr><th></th><th>Ture</th><th>m³</th><th>km pun</th><th>km prazan</th><th>km ukupno</th>${saG?'<th>Gorivo L</th><th>Gorivo KM</th>':''}</tr>${red.map(([k,x])=>`<tr><td>${e(k)}</td><td class="r">${x.ture}</td><td class="r">${n(x.m3)}</td><td class="r">${n(x.km)}</td><td class="r">${n(x.kmp)}</td><td class="r">${n(x.kmu)}</td>${saG?`<td class="r">${Math.round(x.lit)}</td><td class="r">${x.kmn.toFixed(2)}</td>`:''}</tr>`).join('')}<tr class="u"><td>UKUPNO</td><td class="r">${d.p.uk.ture}</td><td class="r">${n(d.p.uk.m3)}</td><td class="r">${n(d.p.uk.km)}</td><td class="r">${n(d.p.uk.kmp)}</td><td class="r">${n(d.p.uk.kmu)}</td>${saG?`<td class="r">${Math.round(d.g.lit)}</td><td class="r">${d.g.km.toFixed(2)}</td>`:''}</tr></table>`;
   const html=`<!doctype html><html><head><meta charset="utf-8"><title>Ture ${e(d.v.reg)}</title><style>@page{size:A4;margin:12mm}body{font-family:Arial,sans-serif;font-size:10.5px;color:#000}h1{font-size:15px;margin:0}h3{font-size:12px;margin:14px 0 4px}table{width:100%;border-collapse:collapse}th,td{border:1px solid #999;padding:3px 5px;text-align:left}th{background:#eee;font-size:9.5px}td.r{text-align:right}tr.u td{font-weight:bold;background:#f3f3f3}.nop{margin-bottom:10px}@media print{.nop{display:none}}</style></head><body>
 <div class="nop"><button onclick="window.print()" style="padding:8px 16px;font-size:14px">🖨 Štampaj / Sačuvaj kao PDF</button></div>
-<h1>Ture — ${e(d.v.reg)}${d.v.garazniBr?' ('+e(d.v.garazniBr)+')':''} ${e(d.v.model||'')}</h1><div>Period: ${e(d.period)} · Gorivo: ${Math.round(d.g.lit)} L · ${d.g.km.toFixed(2)} KM sa PDV</div>
+<h1>Ture — ${e(d.v.reg)}${d.v.garazniBr?' ('+e(d.v.garazniBr)+')':''} ${e(d.v.model||'')}</h1><div>Period: ${e(d.period)} · Gorivo: ${Math.round(d.g.lit)} L · ${d.g.km.toFixed(2)} KM sa PDV · km ture: ${n(d.p.uk.kmu)}${d.g.predjeno!=null?' · km po brojilu: '+n(d.g.predjeno):''}</div>
 ${piv('Po relaciji',d.p.rel,true)}${piv('Po naručiocu',d.p.nar,true)}${piv('Po lokaciji (istovar)',d.p.lok,false)}${piv('Po materijalu',d.p.mat,false)}
-<h3>Pojedinačne ture</h3><table><tr><th>Datum</th><th>Za koga</th><th>Relacija</th><th>km</th><th>Materijal</th><th>m³</th></tr>${d.lista.map(t=>`<tr><td>${e(t.datum)}</td><td>${e(tuOpisZaKoga(t))}</td><td>${e(tuOd(t))} → ${e(tuDo(t))}</td><td class="r">${t.km??''}</td><td>${e(t.materijal||'')}</td><td class="r">${t.kolicina}</td></tr>`).join('')}</table></body></html>`;
+<h3>Pojedinačne ture</h3><table><tr><th>Datum</th><th>Za koga</th><th>Relacija</th><th>Materijal</th><th>m³</th><th>km pun</th><th>km prazan</th></tr>${d.lista.map(t=>`<tr><td>${e(t.datum)}</td><td>${e(tuOpisZaKoga(t))}</td><td>${e(tuOd(t))} → ${e(tuDo(t))}</td><td>${e(t.materijal||'')}</td><td class="r">${t.kolicina}</td><td class="r">${t.km??''}</td><td class="r">${t.kmPrazan??''}</td></tr>`).join('')}</table></body></html>`;
   const w=window.open('','_blank'); if(!w){toast('⚠ Browser je blokirao novi prozor — dozvoli pop-up pa probaj ponovo.',5000);return;}
   w.document.open();w.document.write(html);w.document.close(); setTimeout(()=>{try{w.focus();w.print();}catch(_){}} ,400);
 }
