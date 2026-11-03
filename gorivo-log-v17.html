@@ -58,10 +58,31 @@
       new Promise((_,reject)=>setTimeout(()=>reject(new Error(`Predugo traje (${label}) — provjeri internet konekciju i probaj ponovo.`)), 12000))
     ]);
   }
-  const addDocSafe=(...args)=>withTimeout(addDoc(...args),'dodavanje');
-  const setDocSafe=(...args)=>withTimeout(setDoc(...args),'čuvanje');
-  const updateDocSafe=(...args)=>withTimeout(updateDoc(...args),'ažuriranje');
-  const deleteDocSafe=(...args)=>withTimeout(deleteDoc(...args),'brisanje');
+  // ═══ SNIMANJE "PRVO NA UREĐAJ, PA NA SERVER" ═══
+  // Firestore svaki zapis ODMAH upiše u lokalnu bazu na uređaju i sam ga pošalje kad ima interneta.
+  // Ranije je aplikacija čekala potvrdu servera -> bez interneta "Predugo traje" + rizik duplikata.
+  // Sada: ako server odgovori brzo (ima interneta) - normalno, uključujući prave greške (npr. dozvola).
+  // Ako ne odgovori (offline/slab signal) - zapis se smatra sačuvanim NA UREĐAJU i rad ide dalje;
+  // aplikacija prati koliko zapisa još "čeka slanje" i javlja ako ih server kasnije odbije.
+  const _cekaSlanje=new Map();
+  function _javiPromjenu(){ try{ if(window.azurirajStatusVeze) window.azurirajStatusVeze(); if(window.naPromjenuSlanja) window.naPromjenuSlanja(); }catch(e){} }
+  function lokalnoPaServer(promise, ref, opis){
+    const kljuc=ref&&ref.path?ref.path:('x'+Math.random());
+    _cekaSlanje.set(kljuc,opis); _javiPromjenu();
+    let zavrseno=false;
+    const prati=promise.then(r=>{zavrseno=true;_cekaSlanje.delete(kljuc);_javiPromjenu();return r;},
+                             e=>{zavrseno=true;_cekaSlanje.delete(kljuc);_javiPromjenu();throw e;});
+    const cekaj=navigator.onLine?2500:400;
+    return Promise.race([prati, new Promise(res=>setTimeout(()=>{
+      if(zavrseno) return;
+      prati.catch(e=>{ console.error('Zapis odbijen na serveru',opis,e); try{ toast('⚠ Server nije prihvatio zapis ('+opis+'): '+e.message,9000); }catch(_){} });
+      res(undefined);
+    },cekaj))]);
+  }
+  const setDocSafe=(ref,data,opts)=>lokalnoPaServer(opts?setDoc(ref,data,opts):setDoc(ref,data),ref,'čuvanje');
+  const addDocSafe=(colRef,data)=>{ const ref=doc(colRef); return lokalnoPaServer(setDoc(ref,data),ref,'dodavanje').then(()=>ref); }; // ID se dodijeli odmah na uređaju
+  const updateDocSafe=(ref,data)=>lokalnoPaServer(updateDoc(ref,data),ref,'ažuriranje');
+  const deleteDocSafe=(ref)=>lokalnoPaServer(deleteDoc(ref),ref,'brisanje');
 
   window.FB = {
     auth, db,
@@ -95,6 +116,8 @@
     col(name){ return collection(db,name); },
     docRef(name,id){ return doc(db,name,id); },
     setDoc:setDocSafe, addDoc:addDocSafe, updateDoc:updateDocSafe, deleteDoc:deleteDocSafe, onSnapshot, increment, serverTimestamp,
+    brojCekaSlanje(){ return _cekaSlanje.size; },
+    cekaSlanje(col,id){ return _cekaSlanje.has(col+'/'+id); },
     // Pretplati se na kolekciju - poziva cb(arrayOfDocsWithId) svaki put kad se nešto promijeni (na bilo kom uređaju)
     watchCollection(name, cb){
       return onSnapshot(collection(db,name), snap=>{
@@ -1644,12 +1667,18 @@ function toggleTheme(){
 // ═══ POKAZATELJ VEZE (online/offline) ═══
 function azurirajStatusVeze(){
   const el=document.getElementById('conn-status');if(!el)return;
+  const n=(window.FB&&window.FB.brojCekaSlanje)?window.FB.brojCekaSlanje():0;
+  const cek=n?` · <b style="color:${n>20?'var(--red)':'var(--acc2)'}">⏳ ${n} čeka slanje</b>${n>20?' — uhvati signal!':''}`:'';
   if(navigator.onLine){
-    el.innerHTML='<span class="conn-dot on"></span> Povezano';
+    el.innerHTML='<span class="conn-dot on"></span> Povezano'+(n?cek.replace(' čeka slanje',' šalje se'):'');
   }else{
-    el.innerHTML='<span class="conn-dot off"></span> Offline — čuva se lokalno';
+    el.innerHTML='<span class="conn-dot off"></span> Offline — čuva se na uređaju'+cek;
   }
 }
+// Kad se neki zapis pošalje na server - osvježi oznake ⏳ u listama (sa malim kašnjenjem, da ne crta previše puta)
+let _slanjeTimer=null;
+window.naPromjenuSlanja=function(){ clearTimeout(_slanjeTimer); _slanjeTimer=setTimeout(()=>{ try{ renderDanas(); if(document.getElementById('tab-pregled')?.classList.contains('active')) renderPregled(); }catch(e){} },300); };
+function oznakaCeka(col,id){ return (window.FB&&window.FB.cekaSlanje&&window.FB.cekaSlanje(col,id))?' <span class="tag t-warn" style="font-size:9px" title="Sačuvano na uređaju, šalje se kad dođe internet">⏳ čeka slanje</span>':''; }
 window.addEventListener('online', azurirajStatusVeze);
 window.addEventListener('offline', azurirajStatusVeze);
 
@@ -2647,34 +2676,10 @@ async function generisiTestnuOtpremnicu(){
 
 async function zatvoriOtp(){
   if(!curOtp||!curOtp.stavke.length){toast('⚠ Nema stavki!');return;}
-  try{
-    // Automatsko razdvajanje: ako su u istoj turi vozila iz VIŠE različitih firmi (npr. LKW i Bossil),
-    // svaka firma dobija svoju posebnu otpremnicu (svoj broj), umjesto da se miješaju u jednu.
-    const grupe={};
-    curOtp.stavke.forEach(s=>{
-      const fid=stavkaVehInfo(s).firmaId||'_bezfirme';
-      (grupe[fid]=grupe[fid]||[]).push(s);
-    });
-    const fidKeys=Object.keys(grupe);
-    const saved=[];
-    for(let i=0;i<fidKeys.length;i++){
-      const fid=fidKeys[i];
-      const broj = i===0 ? curOtp.brojOtp : autoBroj('OTP');
-      const podaci={datum:curOtp.datum, brojOtp:broj, cistijernId:curOtp.cistijernId, gradId:curOtp.gradId, gorivo:curOtp.gorivo, stavke:grupe[fid]};
-      const ref=await window.FB.addDoc(window.FB.col('otpremnice'),podaci);
-      saved.push({id:ref.id,...podaci});
-    }
-    saved.forEach(s=>{ if(!S.otpremnice.find(x=>x.id===s.id)) S.otpremnice.push(s); });
-    resetOtpForm();
-    renderDanas();
-    if(fidKeys.length>1){
-      const nazivi=fidKeys.map(fid=>fid==='_bezfirme'?'bez firme':((S.firme.find(x=>x.id===fid)||{}).naziv||'?'));
-      toast(`✓ Automatski podijeljeno na ${saved.length} otpremnice (${nazivi.join(', ')}) — svaka firma svoj list! Ostale nađeš u "Danas" listi za štampu.`,6000);
-    }else{
-      toast('✓ Otpremnica sačuvana!');
-    }
-    printOtp(saved[0].id, saved[0]);
-  }catch(e){toast('⚠ Greška: '+e.message);}
+  // Isti put kao Brzi unos: ID otpremnice se odredi unaprijed na uređaju, pa ni ponovni klik ni slab
+  // internet ne mogu napraviti duplikat; otpremnica se odmah prikaže za štampu i bez interneta.
+  try{ await zatvoriOtpBezDuplikata(); }
+  catch(e){toast('⚠ Greška: '+e.message,6000);}
 }
 // ═══ BRZI UNOS (admin) — tabela kao u Excelu za prepisivanje papirnih otpremnica ═══
 // Ne mijenja postojeće zapise. Svaki red na kraju postaje ISTA stavka kao iz običnog unosa
@@ -2913,8 +2918,8 @@ async function zatvoriOtpBezDuplikata(){
   renderDanas();
   if(fidKeys.length>1){
     const nazivi=fidKeys.map(fid=>fid==='_bezfirme'?'bez firme':((S.firme.find(x=>x.id===fid)||{}).naziv||'?'));
-    toast(`✓ Sačuvano i podijeljeno na ${saved.length} otpremnice (${nazivi.join(', ')}). Ostale su u "Danas" listi za štampu.`,6000);
-  }else toast('✓ Otpremnica sačuvana!');
+    toast(`✓ Sačuvano i podijeljeno na ${saved.length} otpremnice (${nazivi.join(', ')}). Ostale su u "Danas" listi za štampu.${navigator.onLine?'':' Bez interneta — šalje se kad dođe veza.'}`,6000);
+  }else toast(navigator.onLine?'✓ Otpremnica sačuvana!':'✓ Sačuvano na uređaju — šalje se samo kad dođe internet',navigator.onLine?2500:5000);
   printOtp(saved[0].id, saved[0]);
 }
 function odustaniOtp(){if(!confirm('Odustati?'))return;resetOtpForm();}
@@ -3012,7 +3017,7 @@ function renderDanas(){
     const c=gC(o.cistijernId),g=gG(o.gradId),uk=o.stavke.reduce((a,s)=>a+s.litara,0),storno=o.stornirano;
     return`<div style="display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid var(--bord);${storno?'opacity:.55':''}">
       <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-        <span style="font-size:11px;color:var(--mut2);font-family:monospace">${o.brojOtp}</span>
+        <span style="font-size:11px;color:var(--mut2);font-family:monospace">${o.brojOtp}</span>${oznakaCeka('otpremnice',o.id)}
         ${storno?'<span class="tag t-warn" style="font-size:9px">STORNO</span>':''}
         <span class="tag ${storno?'t-warn':'t-l'}">${uk} L</span>
         <span class="tag t-f">${c?c.reg:'?'}</span>
@@ -3169,7 +3174,7 @@ function renderTlLista(){
     const storno=o.stornirano;
     return`<div style="display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid var(--bord);${storno?'opacity:.55':''}">
       <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-        <span style="font-size:11px;color:var(--mut2);font-family:monospace">${o.brojOtp}</span>
+        <span style="font-size:11px;color:var(--mut2);font-family:monospace">${o.brojOtp}</span>${oznakaCeka('otpremnice',o.id)}
         ${storno?'<span class="tag t-warn" style="font-size:9px">STORNO</span>':''}
         <span class="tag ${storno?'t-warn':'t-l'}">${uk} L</span>
         <span class="tag t-f">${c?c.reg:'?'}</span>
@@ -3833,7 +3838,7 @@ function renderPregled(){
       o.stavke.forEach(s=>(s.izvorUlaza||[]).forEach(x=>resolveChainFakture(x.ulazId,0,fakture)));
       const fakturaTxt=[...fakture].join(', ')||'—';
       const firmeOtp=[...new Set(o.stavke.map(s=>{const f=gF(stavkaVehInfo(s).firmaId);return f?f.naziv:null;}).filter(Boolean))].join(' / ')||'—';
-      return`<tr style="${storno?'opacity:.55':''}"><td class="mono" style="font-size:11px">${o.brojOtp}${storno?' <span class="tag t-warn" style="font-size:9px">STORNO</span>':''}</td><td class="mono" style="font-size:12px;${storno?'text-decoration:line-through':''}">${o.datum}</td><td><span class="tag t-ok">${c?c.reg:'?'}</span></td><td><span class="tag t-g">${g?g.naziv:'?'}</span></td><td style="font-size:12px">${firmeOtp}</td><td class="mono" style="font-size:11px;color:var(--mut2)">${fakturaTxt}</td><td style="font-size:12px">${o.gorivo}</td><td style="text-align:center">${o.stavke.length}</td><td><span class="tag ${storno?'t-warn':'t-l'}">${uk}L</span></td><td class="admin-only" style="white-space:nowrap">
+      return`<tr style="${storno?'opacity:.55':''}"><td class="mono" style="font-size:11px">${o.brojOtp}${oznakaCeka('otpremnice',o.id)}${storno?' <span class="tag t-warn" style="font-size:9px">STORNO</span>':''}</td><td class="mono" style="font-size:12px;${storno?'text-decoration:line-through':''}">${o.datum}</td><td><span class="tag t-ok">${c?c.reg:'?'}</span></td><td><span class="tag t-g">${g?g.naziv:'?'}</span></td><td style="font-size:12px">${firmeOtp}</td><td class="mono" style="font-size:11px;color:var(--mut2)">${fakturaTxt}</td><td style="font-size:12px">${o.gorivo}</td><td style="text-align:center">${o.stavke.length}</td><td><span class="tag ${storno?'t-warn':'t-l'}">${uk}L</span></td><td class="admin-only" style="white-space:nowrap">
         <button class="btn btn-pr" onclick="printOtp('${o.id}')">🖨</button>
         ${!storno?`<button class="btn btn-s" style="padding:6px 8px;font-size:11px" onclick="openEditStavke('otpremnice','${o.id}')" title="Uredi">✎</button>
         <button class="btn btn-r" style="padding:6px 8px;font-size:11px" onclick="openStornoModal('otpremnice','${o.id}')" title="Storniraj">↩</button>`:`<span style="font-size:10px;color:var(--mut2)">${o.stornoRazlog||''}</span>`}
