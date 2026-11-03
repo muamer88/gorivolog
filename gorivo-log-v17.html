@@ -278,13 +278,14 @@
   --red:#f04a4a;--redbg:#1e0e0e;--greenbg:#0e1e0e;
   --radius:7px;
 }
-body.light-mode{
-  --bg:#f4f6f1;--surf:#ffffff;--surf2:#eef1ea;--surf3:#e4e8de;
-  --bord:#dde2d6;--bord2:#c7cebd;
-  --acc:#6b9a1e;--acc2:#c17a10;--acc3:#0e9a78;--acc4:#7c5cd6;--acc5:#c0296a;
-  --txt:#1c2418;--mut:#8a9484;--mut2:#5c6656;
-  --red:#c62828;--redbg:#fdeaea;--greenbg:#eaf7ea;
+body.light-mode{ /* svijetli mod: blago plava, bez blještave bijele */
+  --bg:#e3e9f1;--surf:#f2f5f9;--surf2:#e6ecf3;--surf3:#dae2ec;
+  --bord:#cbd5e2;--bord2:#b5c3d5;
+  --acc:#1f5fa8;--acc2:#b0650a;--acc3:#0b7f73;--acc4:#6a4fc4;--acc5:#b02a62;
+  --txt:#17202e;--mut:#7d8a9c;--mut2:#4f5d70;
+  --red:#b3261e;--redbg:#f6e2e2;--greenbg:#e2efe9;
 }
+body.light-mode .dk-seg button.on{color:#fff}
 body{transition:background-color .2s,color .2s}
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
 body{background:var(--bg);color:var(--txt);font-family:system-ui,-apple-system,sans-serif;font-size:14px;min-height:100vh;overflow-x:hidden}
@@ -1825,7 +1826,9 @@ function toggleTheme(){
   const isLight=document.body.classList.toggle('light-mode');
   try{ localStorage.setItem('gorivolog-theme', isLight?'light':'dark'); }catch(e){}
   const btn=document.getElementById('theme-toggle-btn'); if(btn) btn.textContent=isLight?'☀️':'🌙';
-  const mt=document.querySelector('meta[name="theme-color"]'); if(mt) mt.content=isLight?'#f4f6f1':'#0a0c0b';
+  const mt=document.querySelector('meta[name="theme-color"]'); if(mt) mt.content=isLight?'#e3e9f1':'#0a0c0b';
+  // boje koje se crtaju kodom (cisterne, grafikoni) - nacrtaj ponovo u novoj temi
+  try{ if(currentUser&&currentUser.role==='admin') renderDashboard(); if(currentUser&&currentUser.role==='direktor') renderDirektor(); ['tocenje-semafor','cisterna-semafor'].forEach(id=>{ if(document.getElementById(id)) renderCisternaSemafor(id); }); }catch(e){}
 }
 // ═══ POKAZATELJ VEZE (online/offline) ═══
 function azurirajStatusVeze(){
@@ -1861,7 +1864,7 @@ function ukljuciZastituOdIzlaska(){
 function initTheme(){
   const isLight=document.body.classList.contains('light-mode');
   const btn=document.getElementById('theme-toggle-btn'); if(btn) btn.textContent=isLight?'☀️':'🌙';
-  const mt=document.querySelector('meta[name="theme-color"]'); if(mt) mt.content=isLight?'#f4f6f1':'#0a0c0b';
+  const mt=document.querySelector('meta[name="theme-color"]'); if(mt) mt.content=isLight?'#e3e9f1':'#0a0c0b';
 }
 initTheme();
 azurirajStatusVeze();
@@ -5937,7 +5940,7 @@ function semaforCisterne(c){
 function renderCisternaSemafor(targetId){
   const el=document.getElementById(targetId);
   if(!el)return;
-  const boje={ok:'#4af0c8',mid:'#f0a020',warn:'#f04a4a'};
+  const boje=document.body.classList.contains('light-mode')?{ok:'#0b7f73',mid:'#b0650a',warn:'#b3261e'}:{ok:'#4af0c8',mid:'#f0a020',warn:'#f04a4a'};
   const izvor = (currentUser&&currentUser.role==='vozac'&&currentUser.cisterna_id) ? S.cistijerne.filter(c=>c.id===currentUser.cisterna_id) : S.cistijerne;
   if(!izvor.length){el.innerHTML='<div class="empty">Nema cisterni</div>';return;}
   el.innerHTML=izvor.map(c=>{
