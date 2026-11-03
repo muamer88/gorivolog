@@ -513,6 +513,29 @@ body.driver-mode .app{padding-bottom:78px}
 .rep-item{padding:9px 0;border-bottom:1px solid var(--bord)}
 body.direktor-mode #main-nav, body.direktor-mode .admin-only, body.direktor-mode #vozac-bottomnav{display:none!important}
 .dir-wrap{max-width:980px;margin:0 auto}
+.dk-card{padding:12px 14px;margin-bottom:12px}
+.dk-title{font-size:11.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--acc);margin-bottom:8px}
+.dk-semafor{display:flex;gap:8px;flex-wrap:wrap}
+.dk-semafor>div{padding:7px 10px!important;min-width:150px!important;flex:0 1 210px!important;border-radius:8px!important}
+.dk-semafor>div b{font-size:12px}
+.dk-semafor>div>div:nth-child(2){font-size:12px!important}
+.dk-danas{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 12px}
+.dk-danas .ch{background:var(--surf);border:1px solid var(--bord);border-radius:20px;padding:5px 12px;font-size:12.5px;color:var(--mut2)}
+.dk-danas .ch b{color:var(--txt);font-size:14px;margin-right:4px;font-variant-numeric:tabular-nums}
+.dk-danas .ch.warn{border-color:var(--red);color:var(--red)} .dk-danas .ch.warn b{color:var(--red)}
+.dk-kpi{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:8px}
+@media(max-width:760px){.dk-kpi{grid-template-columns:1fr 1fr}}
+.dk-kpi>div{background:var(--surf2);border:1px solid var(--bord);border-radius:8px;padding:7px 10px}
+.dk-kpi .v{font-size:17px;font-weight:900;color:var(--acc);font-variant-numeric:tabular-nums;white-space:nowrap}
+.dk-kpi .v small{font-size:11px;font-weight:700;margin-left:6px}
+.dk-kpi .l{font-size:10px;color:var(--mut2);text-transform:uppercase;letter-spacing:.05em;margin-top:2px}
+.dk-sel{padding:5px 8px;background:var(--surf2);color:var(--txt);border:1px solid var(--bord2);border-radius:6px;font-size:12px}
+.dk-btn{padding:5px 10px!important;font-size:12px!important}
+.dk-seg{display:inline-flex;border:1px solid var(--bord2);border-radius:6px;overflow:hidden}
+.dk-seg button{background:transparent;color:var(--mut2);border:0;padding:5px 10px;font-size:12px;cursor:pointer;font-family:inherit}
+.dk-seg button.on{background:var(--acc);color:#111;font-weight:700}
+.dk-brze{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.dk-brze .btn{padding:8px 10px;font-size:12.5px;text-align:left}
 #tk-tbl th{padding:6px 4px;font-size:10.5px;color:var(--mut2);text-transform:uppercase;letter-spacing:.05em;text-align:left}
 #tk-tbl td{padding:3px 3px;border-bottom:1px solid var(--bord);vertical-align:top}
 .tk-in{width:100%;padding:7px 8px;font-size:14px;background:var(--surf2);color:var(--txt);border:1px solid var(--bord2);border-radius:5px;box-sizing:border-box;font-family:inherit}
@@ -679,49 +702,37 @@ try{
 </div>
 
 <div class="tab active" id="tab-dashboard">
-  <div class="stats" id="dash-stats"></div>
-  <div class="card" id="dt-card">
-    <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+  <div class="card dk-card">
+    <div class="dk-title">🛢️ Stanje cisterni</div>
+    <div id="dash-semafor" class="dk-semafor"></div>
+  </div>
+  <div class="dk-danas" id="dash-stats"></div>
+  <div class="card dk-card" id="dt-card">
+    <div class="dk-title" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px">
       <span>📈 Trend po mjesecima</span>
-      <span style="display:flex;gap:6px;align-items:center">
-        <select id="dt-mj" onchange="renderDashTrend()" style="padding:6px 10px;background:var(--surf2);color:var(--txt);border:1px solid var(--bord2);border-radius:6px;font-size:12.5px"></select>
-        <button class="btn btn-s" style="padding:6px 10px;font-size:12px" onclick="exportDashTrend()">⬇ Excel</button>
+      <span style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+        <span class="dk-seg"><button id="dt-v-uk" class="on" onclick="dtPrikaz('uk')">Ukupno</button><button id="dt-v-f" onclick="dtPrikaz('f')">Po firmi</button></span>
+        <select id="dt-mj" onchange="renderDashTrend()" class="dk-sel"></select>
+        <button class="btn btn-s dk-btn" onclick="exportDashTrend()">⬇ Excel</button>
       </span>
     </div>
-    <div class="dir-kpi" id="dt-kpi"></div>
-    <div class="grid2" style="gap:14px">
-      <div><div style="font-size:11px;color:var(--mut2);margin-bottom:4px">Trošak (KM sa PDV) i litara — zadnjih 12 mjeseci</div><div style="position:relative;height:230px"><canvas id="dt-chart"></canvas></div></div>
-      <div><div style="font-size:11px;color:var(--mut2);margin-bottom:4px">Trošak po firmi (KM sa PDV)</div><div style="position:relative;height:230px"><canvas id="dt-chart-f"></canvas></div></div>
-    </div>
-    <div class="tw" id="dt-tabela" style="margin-top:12px"></div>
+    <div class="dk-kpi" id="dt-kpi"></div>
+    <div style="position:relative;height:170px"><canvas id="dt-chart"></canvas></div>
+    <details style="margin-top:6px"><summary style="cursor:pointer;font-size:12px;color:var(--acc3)">Tabela po mjesecima</summary><div class="tw" id="dt-tabela" style="margin-top:6px"></div></details>
   </div>
-  <div class="card">
-    <div class="card-title">🚦 Stanje cisterni</div>
-    <div id="dash-semafor" style="display:flex;gap:10px;flex-wrap:wrap"></div>
-  </div>
-  <div class="card">
-    <div class="card-title">💰 Trošak goriva</div>
-    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">
-      <button class="btn btn-s" data-period="danas" style="padding:6px 12px;font-size:12px" onclick="dashTrosakPeriod('danas')">Danas</button>
-      <button class="btn btn-s" data-period="7" style="padding:6px 12px;font-size:12px" onclick="dashTrosakPeriod('7')">7 dana</button>
-      <button class="btn btn-p" data-period="mjesec" style="padding:6px 12px;font-size:12px" onclick="dashTrosakPeriod('mjesec')">Ovaj mjesec</button>
-      <button class="btn btn-s" data-period="sve" style="padding:6px 12px;font-size:12px" onclick="dashTrosakPeriod('sve')">Sve</button>
-    </div>
-    <div id="dash-trosak"></div>
-  </div>
-  <div class="grid2" style="gap:14px">
-    <div class="card">
-      <div class="card-title">⚡ Brze radnje</div>
-      <div style="display:flex;flex-direction:column;gap:8px">
-        <button class="btn btn-p" style="text-align:left" onclick="showTab('tocenje',document.querySelectorAll('.nav-btn')[1])">📋 Nova otpremnica</button>
-        <button class="btn btn-s" style="text-align:left" onclick="showTab('ulaz',document.querySelectorAll('.nav-btn')[4])">🚚 Unesi ulaz goriva</button>
-        <button class="btn btn-s" style="text-align:left" onclick="showTab('pregled',document.querySelectorAll('.nav-btn')[5])">📦 Pregled otpremnica</button>
-        <button class="btn btn-s" style="text-align:left" onclick="showTab('izvjestaj',document.querySelectorAll('.nav-btn')[8])">📊 Izvještaji</button>
-      </div>
-    </div>
-    <div class="card">
-      <div class="card-title">🕐 Danas</div>
+  <div class="grid2" style="gap:12px">
+    <div class="card dk-card">
+      <div class="dk-title">🕐 Danas</div>
       <div id="dash-danas"><div class="empty">Nema unosa za danas</div></div>
+    </div>
+    <div class="card dk-card">
+      <div class="dk-title">⚡ Brze radnje</div>
+      <div class="dk-brze">
+        <button class="btn btn-p" onclick="showTab('tocenje',document.querySelectorAll('.nav-btn')[2])">📋 Nova otpremnica</button>
+        <button class="btn btn-s" onclick="showTab('ulaz',document.querySelectorAll('.nav-btn')[5])">🚚 Ulaz goriva</button>
+        <button class="btn btn-s" onclick="showTab('pregled',document.querySelectorAll('.nav-btn')[6])">📦 Pregled</button>
+        <button class="btn btn-s" onclick="showTab('izvjestaj',document.querySelectorAll('.nav-btn')[9])">📊 Izvještaji</button>
+      </div>
     </div>
   </div>
 </div>
@@ -3133,11 +3144,12 @@ function renderDashTrend(){
   const mj=[...Array(12)].map((_,i)=>dirMjOffset(ym,i-11));
   const red=mj.map(dtPodaciMj);
   const t=red[11], pr=red[10];
+  const dl=(a,b,obrnuto)=>{ if(!b) return ''; const p=(a-b)/b*100; if(Math.abs(p)<3) return '<small style="color:var(--mut2)">≈</small>'; return `<small style="color:${p>0?'var(--red)':'var(--acc3)'}">${p>0?'▲':'▼'}${Math.abs(p).toFixed(0)}%</small>`; };
   document.getElementById('dt-kpi').innerHTML=`
-    <div class="stat"><div class="stat-n">${dirKM(t.km)}</div><div class="stat-l">Trošak goriva — ${dirMjNaziv(ym)}</div>${dirDelta(t.km,pr.km)}</div>
-    <div class="stat"><div class="stat-n">${dirL(t.lit)}</div><div class="stat-l">Natočeno · ${t.tocenja} točenja</div>${dirDelta(t.lit,pr.lit)}</div>
-    <div class="stat"><div class="stat-n">${dirL(t.kupL)}</div><div class="stat-l">Kupljeno (fakture)</div><div class="dir-delta dir-flat">${t.kupKM?dirKM(t.kupKM)+' sa PDV':'—'}</div></div>
-    <div class="stat"><div class="stat-n">${t.cij?t.cij.toFixed(3):'—'}</div><div class="stat-l">Prosj. nabavna cijena KM/L (sa PDV)</div>${t.cij&&pr.cij?dirDelta(t.cij,pr.cij):'<div class="dir-delta dir-flat">—</div>'}</div>`;
+    <div><div class="v">${dirKM(t.km)}${dl(t.km,pr.km)}</div><div class="l">Trošak · ${dirMjNaziv(ym)}</div></div>
+    <div><div class="v">${dirL(t.lit)}${dl(t.lit,pr.lit)}</div><div class="l">Natočeno · ${t.tocenja} točenja</div></div>
+    <div><div class="v">${dirL(t.kupL)}</div><div class="l">Kupljeno${t.kupKM?' · '+dirKM(t.kupKM):''}</div></div>
+    <div><div class="v">${t.cij?t.cij.toFixed(3):'—'}${t.cij&&pr.cij?dl(t.cij,pr.cij):''}</div><div class="l">Prosj. cijena KM/L sa PDV</div></div>`;
   // Tabela
   document.getElementById('dt-tabela').innerHTML=`<table><thead><tr><th>Mjesec</th><th style="text-align:right">Litara</th><th style="text-align:right">Trošak KM</th><th style="text-align:right">Kupljeno L</th><th style="text-align:right">Prosj. cijena</th><th style="text-align:right">Točenja</th></tr></thead><tbody>${[...red].reverse().filter(r=>r.lit||r.kupL).map(r=>`<tr style="${r.ym===ym?'font-weight:800':''}"><td>${dirMjNaziv(r.ym)}</td><td class="mono" style="text-align:right">${Math.round(r.lit).toLocaleString('bs-BA')}</td><td class="mono" style="text-align:right">${Math.round(r.km).toLocaleString('bs-BA')}</td><td class="mono" style="text-align:right">${Math.round(r.kupL).toLocaleString('bs-BA')}</td><td class="mono" style="text-align:right">${r.cij?r.cij.toFixed(3):'—'}</td><td class="mono" style="text-align:right">${r.tocenja}</td></tr>`).join('')||'<tr><td colspan="6" class="empty">Nema podataka</td></tr>'}</tbody></table>`;
   if(typeof Chart==='undefined') return;
@@ -3145,26 +3157,27 @@ function renderDashTrend(){
   const cAcc=css.getPropertyValue('--acc').trim()||'#c8f04a', cAcc3=css.getPropertyValue('--acc3').trim()||'#4af0c8', cMut=css.getPropertyValue('--mut2').trim()||'#8a9b8a', cBord=css.getPropertyValue('--bord').trim()||'#252825';
   const labele=mj.map(m=>dirMjNaziv(m).replace(' 20',' ’'));
   if(dtChart) dtChart.destroy();
-  dtChart=new Chart(document.getElementById('dt-chart'),{
-    data:{labels:labele,datasets:[
-      {type:'bar',label:'Trošak KM',data:red.map(r=>Math.round(r.km)),backgroundColor:mj.map(m=>m===ym?cAcc:cAcc+'88'),yAxisID:'y',borderRadius:4},
-      {type:'line',label:'Litara',data:red.map(r=>Math.round(r.lit)),borderColor:cAcc3,backgroundColor:cAcc3,yAxisID:'y1',tension:.3,pointRadius:3}
-    ]},
-    options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
-      plugins:{legend:{labels:{color:cMut,boxWidth:12}},tooltip:{callbacks:{label:c=>`${c.dataset.label}: ${c.parsed.y.toLocaleString('bs-BA')}`}}},
-      scales:{x:{ticks:{color:cMut},grid:{display:false}},y:{position:'left',beginAtZero:true,ticks:{color:cMut},grid:{color:cBord},title:{display:true,text:'KM',color:cMut}},y1:{position:'right',beginAtZero:true,ticks:{color:cMut},grid:{display:false},title:{display:true,text:'L',color:cMut}}}}
-  });
-  // Po firmi (složeni stubići)
-  const firmeIds=new Set(); const poF=mj.map(m=>{const o={}; dirStavkeMj(m).forEach(({s})=>{const fid=stavkaVehInfo(s).firmaId||'_'; firmeIds.add(fid); o[fid]=(o[fid]||0)+izracunajTrosakStavke(s)*DIR_PDV;}); return o;});
-  const paleta=['#4af0c8','#f0a020','#a78bfa','#f04a8a','#c8f04a','#60a5fa','#f87171','#94a3b8'];
-  const fid=[...firmeIds].sort((a,b)=>((gF(a)||{}).naziv||'').localeCompare((gF(b)||{}).naziv||''));
-  if(dtChartF) dtChartF.destroy();
-  dtChartF=new Chart(document.getElementById('dt-chart-f'),{type:'bar',
-    data:{labels:labele,datasets:fid.map((f,i)=>({label:(gF(f)||{}).naziv||'bez firme',data:poF.map(o=>Math.round(o[f]||0)),backgroundColor:paleta[i%paleta.length],borderRadius:2}))},
-    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:cMut,boxWidth:12}}},
-      scales:{x:{stacked:true,ticks:{color:cMut},grid:{display:false}},y:{stacked:true,beginAtZero:true,ticks:{color:cMut},grid:{color:cBord}}}}
-  });
+  if(dtChartF){ dtChartF.destroy(); dtChartF=null; }
+  const osi={x:{ticks:{color:cMut,font:{size:10}},grid:{display:false}}};
+  if(window._dtPrikaz==='f'){
+    const firmeIds=new Set(); const poF=mj.map(m=>{const o={}; dirStavkeMj(m).forEach(({s})=>{const fid=stavkaVehInfo(s).firmaId||'_'; firmeIds.add(fid); o[fid]=(o[fid]||0)+izracunajTrosakStavke(s)*DIR_PDV;}); return o;});
+    const paleta=['#4af0c8','#f0a020','#a78bfa','#f04a8a','#c8f04a','#60a5fa','#f87171','#94a3b8'];
+    const fid=[...firmeIds].sort((a,b)=>((gF(a)||{}).naziv||'').localeCompare((gF(b)||{}).naziv||''));
+    dtChart=new Chart(document.getElementById('dt-chart'),{type:'bar',
+      data:{labels:labele,datasets:fid.map((f,i)=>({label:(gF(f)||{}).naziv||'bez firme',data:poF.map(o=>Math.round(o[f]||0)),backgroundColor:paleta[i%paleta.length],borderRadius:2}))},
+      options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{color:cMut,boxWidth:10,font:{size:10}}}},
+        scales:{...osi,x:{...osi.x,stacked:true},y:{stacked:true,beginAtZero:true,ticks:{color:cMut,font:{size:10}},grid:{color:cBord}}}}});
+  }else{
+    dtChart=new Chart(document.getElementById('dt-chart'),{
+      data:{labels:labele,datasets:[
+        {type:'bar',label:'Trošak KM',data:red.map(r=>Math.round(r.km)),backgroundColor:mj.map(m=>m===ym?cAcc:cAcc+'88'),yAxisID:'y',borderRadius:4},
+        {type:'line',label:'Litara',data:red.map(r=>Math.round(r.lit)),borderColor:cAcc3,backgroundColor:cAcc3,yAxisID:'y1',tension:.3,pointRadius:2}]},
+      options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
+        plugins:{legend:{position:'bottom',labels:{color:cMut,boxWidth:10,font:{size:10}}},tooltip:{callbacks:{label:c=>`${c.dataset.label}: ${c.parsed.y.toLocaleString('bs-BA')}`}}},
+        scales:{...osi,y:{position:'left',beginAtZero:true,ticks:{color:cMut,font:{size:10}},grid:{color:cBord}},y1:{position:'right',beginAtZero:true,ticks:{color:cMut,font:{size:10}},grid:{display:false}}}}});
+  }
 }
+function dtPrikaz(v){ window._dtPrikaz=v; document.getElementById('dt-v-uk').classList.toggle('on',v!=='f'); document.getElementById('dt-v-f').classList.toggle('on',v==='f'); renderDashTrend(); }
 function exportDashTrend(){
   if(typeof XLSX==='undefined'){toast('⚠ Učitava se Excel biblioteka...',3000);return;}
   const ym=document.getElementById('dt-mj').value||today().slice(0,7);
@@ -3191,11 +3204,11 @@ function renderDashboard(){
   const vozilaDanas=new Set();
   otpDanas.forEach(o=>o.stavke.forEach(s=>vozilaDanas.add(stavkaVoziloKljuc(s))));
   const kritCist=S.cistijerne.filter(c=>semaforCisterne(c).boja==='warn').length;
-  document.getElementById('dash-stats').innerHTML=`
-    <div class="stat"><div class="stat-n">${brDanas}</div><div class="stat-l">Otpremnica danas</div></div>
-    <div class="stat"><div class="stat-n">${litDanas.toLocaleString()}</div><div class="stat-l">Litara danas</div></div>
-    <div class="stat"><div class="stat-n">${vozilaDanas.size}</div><div class="stat-l">Vozila danas</div></div>
-    <div class="stat" style="${kritCist>0?'color:var(--red)':''}"><div class="stat-n">${kritCist}</div><div class="stat-l">Cisterni kritično nisko</div></div>`;
+  document.getElementById('dash-stats').innerHTML=`<span class="ch" style="border:0;background:transparent;padding-left:2px;font-weight:800;color:var(--acc)">DANAS</span>
+    <span class="ch"><b>${brDanas}</b>otpremnica</span>
+    <span class="ch"><b>${litDanas.toLocaleString('bs-BA')}</b>litara</span>
+    <span class="ch"><b>${vozilaDanas.size}</b>vozila</span>
+    <span class="ch ${kritCist>0?'warn':''}"><b>${kritCist}</b>cisterni kritično nisko</span>`;
   // "Danas" lista - kombinovano glavne i treća lica, najnovije prvo
   const svi=[...otpDanas.map(o=>({...o,_tip:'glavna'})),...otp3Danas.map(o=>({...o,_tip:'treca'}))];
   if(!svi.length){document.getElementById('dash-danas').innerHTML='<div class="empty">Nema unosa za danas</div>';return;}
