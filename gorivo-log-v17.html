@@ -27,7 +27,7 @@
     getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, createUserWithEmailAndPassword
   } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
   import {
-    getFirestore, initializeFirestore, persistentLocalCache,
+    getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager, getDocFromCache, waitForPendingWrites,
     collection, doc, setDoc, addDoc, updateDoc, deleteDoc, onSnapshot, increment, serverTimestamp, getDoc, runTransaction, writeBatch, getDocs
   } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 
@@ -45,7 +45,7 @@
   const app = initializeApp(firebaseConfig);
   const auth = getAuth(app);
   const db = initializeFirestore(app, {
-    localCache: persistentLocalCache({})
+    localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }) // radi i kad je otvoreno u više tabova
   });
 
   function toEmail(username){ return username.trim().toLowerCase().replace(/\s+/g,'')+'@'+FAKE_EMAIL_DOMAIN; }
@@ -91,9 +91,26 @@
     },
     async logout(){ return signOut(auth); },
     onAuthChange(cb){ onAuthStateChanged(auth, cb); },
+    // Profil korisnika: sa servera; bez interneta iz kopije na uređaju (da se aplikacija otvori i offline)
     async getUserDoc(uid){
-      const snap = await getDoc(doc(db,'users',uid));
-      return snap.exists() ? snap.data() : null;
+      const kljuc='gl-profil-'+uid;
+      try{
+        const snap = await Promise.race([getDoc(doc(db,'users',uid)), new Promise((_,rej)=>setTimeout(()=>rej(new Error('spora veza')), navigator.onLine?8000:1500))]);
+        const d = snap.exists() ? snap.data() : null;
+        try{ if(d) localStorage.setItem(kljuc, JSON.stringify(d)); else localStorage.removeItem(kljuc); }catch(_){}
+        return d;
+      }catch(e){
+        try{ const c=await getDocFromCache(doc(db,'users',uid)); if(c.exists()) return c.data(); }catch(_){}
+        try{ const l=localStorage.getItem(kljuc); if(l) return JSON.parse(l); }catch(_){}
+        throw e;
+      }
+    },
+    // Da li na uređaju ima zapisa koji još nisu stigli na server (uključujući one iz ranijih otvaranja aplikacije)
+    async imaNeposlanih(){
+      if(_cekaSlanje.size) return true;
+      let gotovo=false;
+      await Promise.race([waitForPendingWrites(db).then(()=>{gotovo=true;}).catch(()=>{gotovo=true;}), new Promise(r=>setTimeout(r,800))]);
+      return !gotovo;
     },
     // Kreira korisnika BEZ odjave trenutno prijavljenog admina (koristi sekundarnu app instancu)
     async createDriver(username, password, puno_ime, vozilo_id, role, cisterna_id){
@@ -473,6 +490,17 @@ try{
 </script>
 
 <!-- ═══ LOGIN EKRAN ═══ -->
+<div id="lockScreen" style="display:none;position:fixed;inset:0;background:var(--bg);z-index:550;align-items:center;justify-content:center;padding:20px">
+  <div style="width:100%;max-width:320px;text-align:center">
+    <div style="font-size:42px;margin-bottom:6px">🔒</div>
+    <div id="lk-ime" style="font-weight:800;font-size:16px;margin-bottom:4px"></div>
+    <div id="lk-naslov" style="font-size:13px;color:var(--mut2);margin-bottom:16px">Upiši PIN za otključavanje</div>
+    <input id="lk-pin" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="6" autocomplete="off" placeholder="••••" style="width:100%;text-align:center;font-size:28px;letter-spacing:10px;padding:12px;background:var(--surf2);color:var(--txt);border:1px solid var(--bord2);border-radius:8px" onkeydown="if(event.key==='Enter')pinPotvrdi()">
+    <div id="lk-err" style="color:var(--red);font-size:12px;min-height:18px;margin-top:8px"></div>
+    <button class="btn btn-p btn-lg" style="width:100%;margin-top:6px" onclick="pinPotvrdi()" id="lk-btn">Otključaj</button>
+    <div style="margin-top:18px"><a href="#" onclick="sigurnaOdjava(true);return false" style="font-size:12px;color:var(--mut2);text-decoration:underline">Zaboravio PIN / drugi vozač → odjava (traži internet)</a></div>
+  </div>
+</div>
 <div id="loginScreen" style="position:fixed;inset:0;background:var(--bg);z-index:500;display:flex;align-items:center;justify-content:center;padding:20px">
   <div style="width:100%;max-width:340px">
     <div style="text-align:center;margin-bottom:28px">
@@ -500,7 +528,7 @@ try{
     <span id="ui-name">—</span>
     <span id="conn-status" style="display:flex;align-items:center;gap:4px;font-size:11px;white-space:nowrap" title="Status veze"></span>
     <button class="role-btn" onclick="toggleTheme()" id="theme-toggle-btn" title="Promijeni izgled">🌙</button>
-    <button class="role-btn" onclick="doLogout()">🚪 Odjava</button>
+    <button class="role-btn" id="ui-logout-btn" onclick="sigurnaOdjava()">🚪 Odjava</button>
   </div>
 
   <nav id="main-nav" class="admin-only">
@@ -5955,6 +5983,58 @@ async function doLogin(ev){
     err.textContent=map[e.code]||('Greška pri prijavi ('+e.code+')');
   }
 }
+// ═══ SIGURNA ODJAVA — ne dozvoli da se izgube neposlani zapisi ili da vozač ostane zaključan bez interneta ═══
+async function sigurnaOdjava(saZakljucanog){
+  const vozac=currentUser&&currentUser.role==='vozac';
+  if(vozac && !saZakljucanog){ zakljucaj(); return; } // vozač umjesto odjave zaključa aplikaciju PIN-om
+  let neposlano=false;
+  try{ neposlano = window.FB&&window.FB.imaNeposlanih ? await window.FB.imaNeposlanih() : false; }catch(_){}
+  if(neposlano){
+    alert('⏳ Na ovom uređaju ima zapisa koji još NISU poslani na server.\n\nOdjava nije dozvoljena dok se ne pošalju — sačekaj da uređaj uhvati internet (oznaka ⏳ nestane) pa probaj ponovo.');
+    return;
+  }
+  if(!navigator.onLine && !confirm('Nema interneta. Ako se sad odjaviš, NEĆEŠ se moći ponovo prijaviti dok ne dobiješ signal.\n\nSvejedno se odjaviti?')) return;
+  if(currentUser){ try{ localStorage.removeItem('gl-pin-'+currentUser.uid); localStorage.removeItem('gl-zakljucano-'+currentUser.uid); localStorage.removeItem('gl-profil-'+currentUser.uid); }catch(_){} }
+  document.getElementById('lockScreen').style.display='none';
+  doLogout();
+}
+async function pinHash(pin){
+  const data=new TextEncoder().encode((currentUser?currentUser.uid:'')+'|gorivolog|'+pin);
+  if(window.crypto&&crypto.subtle){ const h=await crypto.subtle.digest('SHA-256',data); return [...new Uint8Array(h)].map(b=>b.toString(16).padStart(2,'0')).join(''); }
+  let x=0; for(const b of data) x=(x*31+b)>>>0; return 'h'+x;
+}
+let _pinNovi=null;
+function zakljucaj(){
+  if(!currentUser) return;
+  const imaPin=(()=>{try{return !!localStorage.getItem('gl-pin-'+currentUser.uid);}catch(_){return false;}})();
+  _pinNovi=null;
+  document.getElementById('lk-ime').textContent=currentUser.puno_ime||currentUser.username;
+  document.getElementById('lk-naslov').textContent=imaPin?'Upiši PIN za otključavanje':'Prvi put: izaberi PIN (4–6 cifara) za ovaj uređaj';
+  document.getElementById('lk-btn').textContent=imaPin?'Otključaj':'Dalje';
+  document.getElementById('lk-err').textContent='';
+  document.getElementById('lk-pin').value='';
+  if(imaPin){ try{ localStorage.setItem('gl-zakljucano-'+currentUser.uid,'1'); }catch(_){} }
+  document.getElementById('lockScreen').style.display='flex';
+  setTimeout(()=>document.getElementById('lk-pin').focus(),50);
+}
+async function pinPotvrdi(){
+  const pin=document.getElementById('lk-pin').value.trim(), err=document.getElementById('lk-err');
+  if(!/^\d{4,6}$/.test(pin)){ err.textContent='PIN mora imati 4 do 6 cifara.'; return; }
+  const kljuc='gl-pin-'+currentUser.uid;
+  let sacuvan=null; try{ sacuvan=localStorage.getItem(kljuc); }catch(_){}
+  if(!sacuvan){ // postavljanje novog PIN-a (dva puta)
+    if(_pinNovi===null){ _pinNovi=pin; document.getElementById('lk-pin').value=''; document.getElementById('lk-naslov').textContent='Ponovi isti PIN'; document.getElementById('lk-btn').textContent='Sačuvaj PIN i zaključaj'; err.textContent=''; return; }
+    if(pin!==_pinNovi){ _pinNovi=null; document.getElementById('lk-pin').value=''; document.getElementById('lk-naslov').textContent='Prvi put: izaberi PIN (4–6 cifara) za ovaj uređaj'; document.getElementById('lk-btn').textContent='Dalje'; err.textContent='PIN-ovi se ne poklapaju, probaj ponovo.'; return; }
+    try{ localStorage.setItem(kljuc, await pinHash(pin)); localStorage.setItem('gl-zakljucano-'+currentUser.uid,'1'); }catch(_){ err.textContent='Ne mogu sačuvati PIN na ovom uređaju.'; return; }
+    _pinNovi=null; document.getElementById('lk-pin').value=''; document.getElementById('lk-naslov').textContent='🔒 Zaključano. Upiši PIN za otključavanje'; document.getElementById('lk-btn').textContent='Otključaj'; err.textContent='';
+    return;
+  }
+  if(await pinHash(pin)===sacuvan){
+    try{ localStorage.removeItem('gl-zakljucano-'+currentUser.uid); }catch(_){}
+    document.getElementById('lockScreen').style.display='none';
+    toast('🔓 Otključano');
+  }else{ err.textContent='Pogrešan PIN.'; document.getElementById('lk-pin').value=''; }
+}
 function doLogout(){
   clearTimeout(window._inactivityTimer);
   unsubscribers.forEach(u=>u&&u());unsubscribers=[];
@@ -5969,6 +6049,7 @@ const NEAKTIVNOST_LIMIT=30*60*1000;
 function resetInactivityTimer(){
   clearTimeout(window._inactivityTimer);
   if(!currentUser) return;
+  if(currentUser.role==='vozac') return; // vozači se nikad ne odjavljuju sami (na terenu bez signala ne bi mogli nazad) - koriste 🔒 PIN
   window._inactivityTimer=setTimeout(()=>{
     if(!navigator.onLine){
       // Offline - ne odjavljuj (vozač bi ostao zaključan dok ne dobije signal). Samo produži čekanje.
@@ -6037,9 +6118,13 @@ window.addEventListener('fb-ready',()=>{
         applyRole(udoc.role);
         resetInactivityTimer();
         startSync();
+        const lb=document.getElementById('ui-logout-btn'); if(lb) lb.textContent=udoc.role==='vozac'?'🔒 Zaključaj':'🚪 Odjava';
+        try{ if(udoc.role==='vozac' && localStorage.getItem('gl-zakljucano-'+user.uid)) zakljucaj(); }catch(_){}
+        try{ if(navigator.storage&&navigator.storage.persist) navigator.storage.persist(); }catch(_){} // traži od uređaja da ne briše podatke aplikacije sam od sebe
+        azurirajStatusVeze();
       }catch(e){
         console.error(e);
-        document.getElementById('li-err').textContent='Greška pri učitavanju profila.';
+        document.getElementById('li-err').textContent=navigator.onLine?'Greška pri učitavanju profila.':'Nema interneta, a profil još nije sačuvan na ovom uređaju — prijavi se jednom dok imaš signal.';
         document.getElementById('li-loading').style.display='none';
       }
     }else{
@@ -6060,6 +6145,13 @@ window.addEventListener('fb-ready',()=>{
 // provjeru izgleda/rasporeda. Ništa se ne čuva, prijava/baza ne rade u ovom modu.
 setTimeout(()=>{
   if(window._fbReady) return; // Firebase se normalno učitao, sve OK, ne radi ništa
+  if(location.protocol!=='file:'){
+    // Pravi sajt: NIKAD probni mod. Firebase se možda samo sporo učitava (slab signal) - prikaži poruku i čekaj.
+    const e=document.getElementById('li-err');
+    if(e && !window._fbReady) e.textContent=navigator.onLine?'Veza je spora, učitavam…':'Nema interneta, a aplikacija još nije sačuvana na ovom uređaju. Otvori je jednom dok imaš signal.';
+    window.addEventListener('fb-ready',()=>{ const e2=document.getElementById('li-err'); if(e2) e2.textContent=''; },{once:true});
+    return;
+  }
   const banner=document.createElement('div');
   banner.style.cssText='background:#7a1f1f;color:#fff;text-align:center;padding:8px 12px;font-size:12px;font-weight:600;position:relative;z-index:600';
   banner.textContent='⚠️ LOKALNI TEST MOD — Firebase nije dostupan (otvoreno kao fajl, bez servera). Prikazani su probni podaci, ništa se ne čuva. Za pravi test, koristi link sa GitHub Pages.';
