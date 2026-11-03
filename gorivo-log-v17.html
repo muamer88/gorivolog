@@ -680,6 +680,21 @@ try{
 
 <div class="tab active" id="tab-dashboard">
   <div class="stats" id="dash-stats"></div>
+  <div class="card" id="dt-card">
+    <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+      <span>📈 Trend po mjesecima</span>
+      <span style="display:flex;gap:6px;align-items:center">
+        <select id="dt-mj" onchange="renderDashTrend()" style="padding:6px 10px;background:var(--surf2);color:var(--txt);border:1px solid var(--bord2);border-radius:6px;font-size:12.5px"></select>
+        <button class="btn btn-s" style="padding:6px 10px;font-size:12px" onclick="exportDashTrend()">⬇ Excel</button>
+      </span>
+    </div>
+    <div class="dir-kpi" id="dt-kpi"></div>
+    <div class="grid2" style="gap:14px">
+      <div><div style="font-size:11px;color:var(--mut2);margin-bottom:4px">Trošak (KM sa PDV) i litara — zadnjih 12 mjeseci</div><div style="position:relative;height:230px"><canvas id="dt-chart"></canvas></div></div>
+      <div><div style="font-size:11px;color:var(--mut2);margin-bottom:4px">Trošak po firmi (KM sa PDV)</div><div style="position:relative;height:230px"><canvas id="dt-chart-f"></canvas></div></div>
+    </div>
+    <div class="tw" id="dt-tabela" style="margin-top:12px"></div>
+  </div>
   <div class="card">
     <div class="card-title">🚦 Stanje cisterni</div>
     <div id="dash-semafor" style="display:flex;gap:10px;flex-wrap:wrap"></div>
@@ -3097,8 +3112,75 @@ function dashTrosakPeriod(period){
   `;
 }
 
+
+// ═══ DASHBOARD — TREND PO MJESECIMA (samo čita otpremnice i ulaze) ═══
+let dtChart=null, dtChartF=null;
+function dtPodaciMj(ym){
+  const z=dirZbir(ym);
+  const kup=S.ulazi.filter(u=>u.dobav!=='KOREKCIJA'&&u.litara>0&&(u.datum||'').slice(0,7)===ym);
+  const kupL=kup.reduce((a,u)=>a+u.litara,0);
+  const sC=kup.filter(u=>u.cijenaLitra);
+  const kupKM=sC.reduce((a,u)=>a+u.litara*u.cijenaLitra,0)*DIR_PDV;
+  const cij=sC.length?sC.reduce((a,u)=>a+u.litara*u.cijenaLitra,0)/sC.reduce((a,u)=>a+u.litara,0)*DIR_PDV:null;
+  const tocenja=dirStavkeMj(ym).length;
+  return {ym,lit:z.lit,km:z.km,kupL,kupKM,cij,tocenja};
+}
+function renderDashTrend(){
+  const sel=document.getElementById('dt-mj'); if(!sel) return;
+  const sad=today().slice(0,7);
+  if(!sel.options.length){ for(let k=0;k<12;k++){ const ym=dirMjOffset(sad,-k); sel.innerHTML+=`<option value="${ym}">${k===0?'Ovaj mjesec — ':''}${dirMjNaziv(ym)}</option>`; } sel.value=sad; }
+  const ym=sel.value||sad;
+  const mj=[...Array(12)].map((_,i)=>dirMjOffset(ym,i-11));
+  const red=mj.map(dtPodaciMj);
+  const t=red[11], pr=red[10];
+  document.getElementById('dt-kpi').innerHTML=`
+    <div class="stat"><div class="stat-n">${dirKM(t.km)}</div><div class="stat-l">Trošak goriva — ${dirMjNaziv(ym)}</div>${dirDelta(t.km,pr.km)}</div>
+    <div class="stat"><div class="stat-n">${dirL(t.lit)}</div><div class="stat-l">Natočeno · ${t.tocenja} točenja</div>${dirDelta(t.lit,pr.lit)}</div>
+    <div class="stat"><div class="stat-n">${dirL(t.kupL)}</div><div class="stat-l">Kupljeno (fakture)</div><div class="dir-delta dir-flat">${t.kupKM?dirKM(t.kupKM)+' sa PDV':'—'}</div></div>
+    <div class="stat"><div class="stat-n">${t.cij?t.cij.toFixed(3):'—'}</div><div class="stat-l">Prosj. nabavna cijena KM/L (sa PDV)</div>${t.cij&&pr.cij?dirDelta(t.cij,pr.cij):'<div class="dir-delta dir-flat">—</div>'}</div>`;
+  // Tabela
+  document.getElementById('dt-tabela').innerHTML=`<table><thead><tr><th>Mjesec</th><th style="text-align:right">Litara</th><th style="text-align:right">Trošak KM</th><th style="text-align:right">Kupljeno L</th><th style="text-align:right">Prosj. cijena</th><th style="text-align:right">Točenja</th></tr></thead><tbody>${[...red].reverse().filter(r=>r.lit||r.kupL).map(r=>`<tr style="${r.ym===ym?'font-weight:800':''}"><td>${dirMjNaziv(r.ym)}</td><td class="mono" style="text-align:right">${Math.round(r.lit).toLocaleString('bs-BA')}</td><td class="mono" style="text-align:right">${Math.round(r.km).toLocaleString('bs-BA')}</td><td class="mono" style="text-align:right">${Math.round(r.kupL).toLocaleString('bs-BA')}</td><td class="mono" style="text-align:right">${r.cij?r.cij.toFixed(3):'—'}</td><td class="mono" style="text-align:right">${r.tocenja}</td></tr>`).join('')||'<tr><td colspan="6" class="empty">Nema podataka</td></tr>'}</tbody></table>`;
+  if(typeof Chart==='undefined') return;
+  const css=getComputedStyle(document.body);
+  const cAcc=css.getPropertyValue('--acc').trim()||'#c8f04a', cAcc3=css.getPropertyValue('--acc3').trim()||'#4af0c8', cMut=css.getPropertyValue('--mut2').trim()||'#8a9b8a', cBord=css.getPropertyValue('--bord').trim()||'#252825';
+  const labele=mj.map(m=>dirMjNaziv(m).replace(' 20',' ’'));
+  if(dtChart) dtChart.destroy();
+  dtChart=new Chart(document.getElementById('dt-chart'),{
+    data:{labels:labele,datasets:[
+      {type:'bar',label:'Trošak KM',data:red.map(r=>Math.round(r.km)),backgroundColor:mj.map(m=>m===ym?cAcc:cAcc+'88'),yAxisID:'y',borderRadius:4},
+      {type:'line',label:'Litara',data:red.map(r=>Math.round(r.lit)),borderColor:cAcc3,backgroundColor:cAcc3,yAxisID:'y1',tension:.3,pointRadius:3}
+    ]},
+    options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
+      plugins:{legend:{labels:{color:cMut,boxWidth:12}},tooltip:{callbacks:{label:c=>`${c.dataset.label}: ${c.parsed.y.toLocaleString('bs-BA')}`}}},
+      scales:{x:{ticks:{color:cMut},grid:{display:false}},y:{position:'left',beginAtZero:true,ticks:{color:cMut},grid:{color:cBord},title:{display:true,text:'KM',color:cMut}},y1:{position:'right',beginAtZero:true,ticks:{color:cMut},grid:{display:false},title:{display:true,text:'L',color:cMut}}}}
+  });
+  // Po firmi (složeni stubići)
+  const firmeIds=new Set(); const poF=mj.map(m=>{const o={}; dirStavkeMj(m).forEach(({s})=>{const fid=stavkaVehInfo(s).firmaId||'_'; firmeIds.add(fid); o[fid]=(o[fid]||0)+izracunajTrosakStavke(s)*DIR_PDV;}); return o;});
+  const paleta=['#4af0c8','#f0a020','#a78bfa','#f04a8a','#c8f04a','#60a5fa','#f87171','#94a3b8'];
+  const fid=[...firmeIds].sort((a,b)=>((gF(a)||{}).naziv||'').localeCompare((gF(b)||{}).naziv||''));
+  if(dtChartF) dtChartF.destroy();
+  dtChartF=new Chart(document.getElementById('dt-chart-f'),{type:'bar',
+    data:{labels:labele,datasets:fid.map((f,i)=>({label:(gF(f)||{}).naziv||'bez firme',data:poF.map(o=>Math.round(o[f]||0)),backgroundColor:paleta[i%paleta.length],borderRadius:2}))},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:cMut,boxWidth:12}}},
+      scales:{x:{stacked:true,ticks:{color:cMut},grid:{display:false}},y:{stacked:true,beginAtZero:true,ticks:{color:cMut},grid:{color:cBord}}}}
+  });
+}
+function exportDashTrend(){
+  if(typeof XLSX==='undefined'){toast('⚠ Učitava se Excel biblioteka...',3000);return;}
+  const ym=document.getElementById('dt-mj').value||today().slice(0,7);
+  const mj=[...Array(12)].map((_,i)=>dirMjOffset(ym,i-11));
+  const red=mj.map(dtPodaciMj);
+  const firme=[...new Set(mj.flatMap(m=>dirStavkeMj(m).map(({s})=>stavkaVehInfo(s).firmaId||'_')))];
+  const poF=mj.map(m=>{const o={}; dirStavkeMj(m).forEach(({s})=>{const f=stavkaVehInfo(s).firmaId||'_'; o[f]=(o[f]||0)+izracunajTrosakStavke(s)*DIR_PDV;}); return o;});
+  const rows=[['Mjesec','Litara','Trošak KM (sa PDV)','Točenja','Kupljeno L','Kupljeno KM (sa PDV)','Prosj. cijena KM/L (sa PDV)',...firme.map(f=>'Trošak '+((gF(f)||{}).naziv||'bez firme'))]];
+  red.forEach((r,i)=>rows.push([dirMjNaziv(r.ym),Math.round(r.lit),+r.km.toFixed(2),r.tocenja,Math.round(r.kupL),+r.kupKM.toFixed(2),r.cij?+r.cij.toFixed(3):'',...firme.map(f=>+(poF[i][f]||0).toFixed(2))]));
+  const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(rows),'Trend po mjesecima');
+  XLSX.writeFile(wb,`trend_gorivo_${today()}.xlsx`); toast('✓ Excel preuzet!');
+}
+
 // ═══ DASHBOARD (početna stranica admina) ═══
 function renderDashboard(){
+  try{ renderDashTrend(); }catch(e){ console.error('trend',e); }
   renderCisternaSemafor('dash-semafor');
   dashTrosakPeriod(window._dashTrosakAktivan||'mjesec');
   const d=today();
