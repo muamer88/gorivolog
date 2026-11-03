@@ -27,7 +27,7 @@
     getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, createUserWithEmailAndPassword
   } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
   import {
-    getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager, getDocFromCache, waitForPendingWrites,
+    getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager, getDocFromCache, waitForPendingWrites, getDocsFromCache, getDocsFromServer, query, where, Timestamp,
     collection, doc, setDoc, addDoc, updateDoc, deleteDoc, onSnapshot, increment, serverTimestamp, getDoc, runTransaction, writeBatch, getDocs
   } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 
@@ -79,10 +79,38 @@
       res(undefined);
     },cekaj))]);
   }
-  const setDocSafe=(ref,data,opts)=>lokalnoPaServer(opts?setDoc(ref,data,opts):setDoc(ref,data),ref,'čuvanje');
-  const addDocSafe=(colRef,data)=>{ const ref=doc(colRef); return lokalnoPaServer(setDoc(ref,data),ref,'dodavanje').then(()=>ref); }; // ID se dodijeli odmah na uređaju
-  const updateDocSafe=(ref,data)=>lokalnoPaServer(updateDoc(ref,data),ref,'ažuriranje');
-  const deleteDocSafe=(ref)=>lokalnoPaServer(deleteDoc(ref),ref,'brisanje');
+  // ═══ FAZA 2: "skidaj samo promjene" ═══
+  // Svaki zapis dobije 'izmj' (vrijeme sa servera). Uređaj čuva kopiju baze i od servera traži samo zapise
+  // promijenjene od zadnjeg puta. Brisanja se javljaju kroz malu kolekciju 'brisanja'.
+  const SYNC_KOL=['cistijerne','firme','gradilista','treceLiceFirme','treceVozila','vozila','ulazi','otpremnice','otpremnice3','ture','transferi','brojaci'];
+  const _mape={}, _cbs={}, _obrisani={}; // _obrisani['kol__id']=ms brisanja
+  const msOd=t=>t&&typeof t.toMillis==='function'?t.toMillis():0;
+  function oznaci(col,data){ return SYNC_KOL.includes(col)?{...data,izmj:serverTimestamp()}:data; }
+  function _emit(col){
+    const cb=_cbs[col]; if(!cb||!_mape[col]) return;
+    const out=[];
+    for(const id in _mape[col]){ const d=_mape[col][id]; const t=_obrisani[col+'__'+id]; if(t && !(msOd(d.izmj)>t)) continue; out.push(d); }
+    cb(out);
+  }
+  function _lokalnoUpisi(ref,data,merge){
+    const col=ref.parent&&ref.parent.id; if(!col||!_mape[col]) return;
+    const st=_mape[col][ref.id];
+    _mape[col][ref.id]=(merge&&st)?{...st,...data,id:ref.id}:{...data,id:ref.id};
+    delete _obrisani[col+'__'+ref.id];
+    _emit(col);
+  }
+  function _lokalnoObrisi(col,id){
+    _obrisani[col+'__'+id]=Date.now()+5*60*1000; // lokalno odmah sakrij
+    if(_mape[col]){ delete _mape[col][id]; _emit(col); }
+  }
+  function _bilješkaBrisanja(col,id){
+    if(!SYNC_KOL.includes(col)) return;
+    setDoc(doc(db,'brisanja',col+'__'+id),{col,id,izmj:serverTimestamp()}).catch(e=>console.warn('Bilješka brisanja nije upisana (pravila?)',col,id,e&&e.message));
+  }
+  const setDocSafe=(ref,data,opts)=>{ const col=ref.parent&&ref.parent.id; const d=oznaci(col,data); _lokalnoUpisi(ref,d,opts&&opts.merge); return lokalnoPaServer(opts?setDoc(ref,d,opts):setDoc(ref,d),ref,'čuvanje'); };
+  const addDocSafe=(colRef,data)=>{ const ref=doc(colRef); const d=oznaci(colRef.id,data); _lokalnoUpisi(ref,d,false); return lokalnoPaServer(setDoc(ref,d),ref,'dodavanje').then(()=>ref); }; // ID se dodijeli odmah na uređaju
+  const updateDocSafe=(ref,data)=>{ const col=ref.parent&&ref.parent.id; const d=oznaci(col,data); _lokalnoUpisi(ref,d,true); return lokalnoPaServer(updateDoc(ref,d),ref,'ažuriranje'); };
+  const deleteDocSafe=(ref)=>{ const col=ref.parent&&ref.parent.id; _lokalnoObrisi(col,ref.id); _bilješkaBrisanja(col,ref.id); return lokalnoPaServer(deleteDoc(ref),ref,'brisanje'); };
 
   window.FB = {
     auth, db,
@@ -142,6 +170,68 @@
         cb(arr);
       }, err=>console.error('watchCollection',name,err));
     },
+    // Način učitavanja: 1 = staro (sve svaki put), 2 = samo promjene. Prekidač je u settings/sync.
+    async syncVerzija(){
+      try{ const s=await Promise.race([getDoc(doc(db,'settings','sync')),new Promise((_,r)=>setTimeout(()=>r(new Error('t')),navigator.onLine?5000:800))]); return s.exists()?(s.data().verzija||1):1; }
+      catch(e){ try{ const c=await getDocFromCache(doc(db,'settings','sync')); return c.exists()?(c.data().verzija||1):1; }catch(_){ return 1; } }
+    },
+    // Učitaj kolekciju: odmah iz kopije na uređaju, pa od servera SAMO promijenjeno od zadnjeg puta
+    watchCollectionDelta(name, cb){
+      let unsub=null, stop=false;
+      (async()=>{
+        _cbs[name]=cb; _mape[name]=_mape[name]||{};
+        let imaKes=false;
+        try{ const sn=await getDocsFromCache(collection(db,name)); sn.forEach(d=>{ _mape[name][d.id]={id:d.id,...d.data()}; imaKes=true; }); }catch(_){}
+        _emit(name);
+        let maxMs=0; Object.values(_mape[name]).forEach(d=>{ const m=msOd(d.izmj); if(m>maxMs) maxMs=m; });
+        const pun=!(imaKes&&maxMs); // novi uređaj / nema kopije -> jednom skini sve
+        const q=pun?collection(db,name):query(collection(db,name),where('izmj','>=',Timestamp.fromMillis(maxMs)));
+        if(stop) return;
+        unsub=onSnapshot(q, snap=>{
+          snap.docChanges().forEach(ch=>{
+            if(ch.type==='removed'){ if(pun) delete _mape[name][ch.doc.id]; return; } // u "promjene" modu removed znači samo da više ne odgovara upitu
+            _mape[name][ch.doc.id]={id:ch.doc.id,...ch.doc.data()};
+          });
+          _emit(name);
+        }, err=>console.error('watchCollectionDelta',name,err));
+      })();
+      return ()=>{ stop=true; if(unsub) unsub(); };
+    },
+    // Bilješke o brisanju (da i ostali uređaji izbrišu iz svoje kopije)
+    watchBrisanja(){
+      let unsub=null, stop=false;
+      (async()=>{
+        let maxMs=0, ima=false;
+        const primijeni=d=>{ const x=d.data(); if(!x||!x.col) return; const m=msOd(x.izmj)||Date.now(); _obrisani[x.col+'__'+x.id]=m; if(m>maxMs) maxMs=m; ima=true; };
+        try{ const sn=await getDocsFromCache(collection(db,'brisanja')); sn.forEach(primijeni); }catch(_){}
+        SYNC_KOL.forEach(_emit);
+        const q=ima&&maxMs?query(collection(db,'brisanja'),where('izmj','>=',Timestamp.fromMillis(maxMs))):collection(db,'brisanja');
+        if(stop) return;
+        unsub=onSnapshot(q, snap=>{ const pog=new Set(); snap.docChanges().forEach(ch=>{ if(ch.type!=='removed'){ primijeni(ch.doc); pog.add(ch.doc.data().col); } }); pog.forEach(_emit); }, err=>console.warn('brisanja',err&&err.message));
+      })();
+      return ()=>{ stop=true; if(unsub) unsub(); };
+    },
+    // Jednokratna priprema / dnevna provjera: svim zapisima bez oznake 'izmj' dodaj je (ništa drugo se ne mijenja)
+    async pripremiOznake(napredak){
+      let ukupno=0, dopunjeno=0;
+      for(const name of SYNC_KOL){
+        const snap=await getDocsFromServer(collection(db,name));
+        const bez=[], naServeru=new Set(); snap.forEach(d=>{ ukupno++; naServeru.add(d.id); if(!d.data().izmj) bez.push(d.id); });
+        // Zapis postoji u kopiji na ovom uređaju, a na serveru ga više nema (obrisan sa stare verzije bez bilješke) -> upiši bilješku brisanja
+        if(_mape[name]){ const nestali=Object.keys(_mape[name]).filter(id=>!naServeru.has(id) && _mape[name][id].izmj===undefined || (!naServeru.has(id) && msOd(_mape[name][id].izmj)>0));
+          for(const id of nestali){ try{ await setDoc(doc(db,'brisanja',name+'__'+id),{col:name,id,izmj:serverTimestamp()}); _lokalnoObrisi(name,id); }catch(_){} } }
+        for(let i=0;i<bez.length;i+=400){
+          const b=writeBatch(db);
+          bez.slice(i,i+400).forEach(id=>b.set(doc(db,name,id),{izmj:serverTimestamp()},{merge:true}));
+          await b.commit(); dopunjeno+=Math.min(400,bez.length-i);
+          if(napredak) napredak(name,dopunjeno);
+        }
+      }
+      return {ukupno,dopunjeno};
+    },
+    async testBrisanja(){ await setDoc(doc(db,'brisanja','__test'),{col:'_test',id:'_',izmj:serverTimestamp()}); return true; },
+    async ukljuciSync(ko){ await setDoc(doc(db,'settings','sync'),{verzija:2,kada:new Date().toISOString(),ko:ko||''}); },
+    async iskljuciSync(ko){ await setDoc(doc(db,'settings','sync'),{verzija:1,kada:new Date().toISOString(),ko:ko||''}); },
     watchDoc(path, cb){
       return onSnapshot(doc(db,path), snap=>cb(snap.exists()?snap.data():null), err=>console.error('watchDoc',path,err));
     },
@@ -161,17 +251,17 @@
       const b=writeBatch(db);
       ops.forEach(op=>{
         const ref=doc(db,op.col,op.id);
-        if(op.type==='delete') b.delete(ref);
-        else b.set(ref,op.data,{merge:!!op.merge});
+        if(op.type==='delete'){ b.delete(ref); if(SYNC_KOL.includes(op.col)) b.set(doc(db,'brisanja',op.col+'__'+op.id),{col:op.col,id:op.id,izmj:serverTimestamp()}); _lokalnoObrisi(op.col,op.id); }
+        else { const d=oznaci(op.col,op.data); b.set(ref,d,{merge:!!op.merge}); _lokalnoUpisi(ref,d,!!op.merge); }
       });
       return b.commit();
     },
     async wipeCollection(name){
       const snap=await getDocs(collection(db,name));
       const ids=[]; snap.forEach(d=>ids.push(d.id));
-      for(let i=0;i<ids.length;i+=450){
+      for(let i=0;i<ids.length;i+=200){
         const b=writeBatch(db);
-        ids.slice(i,i+450).forEach(id=>b.delete(doc(db,name,id)));
+        ids.slice(i,i+200).forEach(id=>{ b.delete(doc(db,name,id)); if(SYNC_KOL.includes(name)) b.set(doc(db,'brisanja',name+'__'+id),{col:name,id,izmj:serverTimestamp()}); _lokalnoObrisi(name,id); });
         await b.commit();
       }
     }
@@ -5669,6 +5759,24 @@ function renderCisternaSemafor(targetId){
 const ZD_LIMIT_PROSTOR=1024*1024*1024, ZD_LIMIT_CITANJA=50000; // besplatni Firebase (Spark) plan
 function zdVelicina(o){ try{ return new Blob([JSON.stringify(o)]).size; }catch(_){ return JSON.stringify(o).length; } }
 function zdMB(b){ return b>=1048576?(b/1048576).toFixed(1)+' MB':(b/1024).toFixed(0)+' KB'; }
+async function pripremiBrzoUcitavanje(){
+  if(!navigator.onLine){toast('⚠ Za ovo treba internet.');return;}
+  if(!confirm('Pripremiti bazu za brzo učitavanje?\n\n• svim zapisima se doda oznaka vremena izmjene (ništa se ne briše i ne mijenja)\n• nakon toga uređaji skidaju samo promjene\n\nPreporuka: prije ovoga napravi backup (dugme iznad).')) return;
+  try{ await window.FB.testBrisanja(); }
+  catch(e){ alert('⚠ Firebase pravila još ne dozvoljavaju ovaj način rada (fali "brisanja").\n\nObjavi nova pravila (poslao sam ih u razgovoru), pa probaj ponovo.\n\nGreška: '+e.message); return; }
+  const el=document.getElementById('zdravlje');
+  try{
+    const r=await window.FB.pripremiOznake((k,n)=>{ if(el) el.insertAdjacentHTML('afterbegin',`<div style="font-size:11px;color:var(--mut2)">… ${k}: ${n}</div>`); });
+    await window.FB.ukljuciSync(currentUser?currentUser.username:'');
+    logAkcija('Uključeno brzo učitavanje (faza 2)', `${r.ukupno} zapisa, dopunjeno ${r.dopunjeno}`);
+    alert(`✓ Gotovo. Pregledano ${r.ukupno} zapisa, oznaka dodana na ${r.dopunjeno}.\n\nAplikacija će se sad osvježiti. Ostali uređaji prelaze na brzo učitavanje kad se sljedeći put otvore.`);
+    location.reload();
+  }catch(e){ toast('⚠ Greška: '+e.message+' — ništa nije pokvareno, probaj ponovo.',7000); }
+}
+async function iskljuciBrzoUcitavanje(){
+  if(!confirm('Vratiti stari način učitavanja (sve svaki put)?')) return;
+  try{ await window.FB.iskljuciSync(currentUser?currentUser.username:''); logAkcija('Isključeno brzo učitavanje',''); location.reload(); }catch(e){ toast('⚠ '+e.message); }
+}
 function renderZdravlje(){
   const el=document.getElementById('zdravlje'); if(!el) return;
   const kol=[['Otpremnice',S.otpremnice],['Treća lica',S.otpremnice3],['Ulazi',S.ulazi],['Transferi',S.transferi],['Ture',S.ture||[]],['Brojači',S.brojaci||[]],['Vozila',S.vozila],['Gradilišta',S.gradilista],['Firme',S.firme]];
@@ -5699,7 +5807,10 @@ function renderZdravlje(){
       📖 Dnevna granica besplatnog plana je 50.000 čitanja. Jedno "puno" otvaranje aplikacije (prvi put na uređaju ili nakon duže pauze) troši oko <b>${ukDok.toLocaleString('bs-BA')}</b> čitanja → dovoljno za oko <b style="color:${boja(okCit)}">${otvaranjaDnevno!=null?otvaranjaDnevno.toLocaleString('bs-BA'):'—'}</b> takvih otvaranja dnevno, za sve uređaje zajedno.<br>
       ${(!okProstor||!okCit)?'<span style="color:var(--red);font-weight:700">⚠ Vrijeme je za "mjesečno zatvaranje" (učitavanje samo novijih mjeseci) ili Blaze plan.</span>':'<span style="color:var(--acc3)">✓ Za sada sve u granicama.</span>'}
     </div>
-    <div style="font-size:11px;color:var(--mut2);margin-top:6px">Procjena na osnovu podataka na ovom uređaju. Tačne brojke: Firebase konzola → Firestore → Usage.</div>`;
+    <div style="font-size:11px;color:var(--mut2);margin-top:6px">Procjena na osnovu podataka na ovom uređaju. Tačne brojke: Firebase konzola → Firestore → Usage.</div>
+    <div class="signal ${window._syncVerzija>=2?'sig-ok':'sig-tip'}" style="margin-top:12px;font-size:12.5px"><span>${window._syncVerzija>=2
+      ?'⚡ <b>Brzo učitavanje je UKLJUČENO</b> — uređaji skidaju samo promjene. <a href="#" onclick="iskljuciBrzoUcitavanje();return false" style="color:var(--mut2)">isključi (vrati stari način)</a>'
+      :'🐢 Uređaji pri svakom otvaranju skidaju <b>sve</b> zapise. <button class="btn btn-p" style="margin-top:8px;padding:7px 12px;font-size:12.5px" onclick="guardedClick(this,pripremiBrzoUcitavanje)">⚡ Pripremi bazu za brzo učitavanje</button><br><span style="font-size:11px;opacity:.8">Svim zapisima doda oznaku vremena izmjene. Ništa se ne briše i ne mijenja. Prije toga napravi backup.</span>'}</span></div>`;
 }
 
 function initPost(){
@@ -6113,8 +6224,15 @@ function resetInactivityTimer(){
 // Kad se signal vrati nakon što je bio offline, ponovo pokreni normalno mjerenje neaktivnosti
 window.addEventListener('online', resetInactivityTimer);
 
-function startSync(){
-  const watch=(name,key)=>unsubscribers.push(window.FB.watchCollection(name,arr=>{S[key]=arr;renderAll();}));
+let _renderTimer=null;
+function renderAllUskoro(){ clearTimeout(_renderTimer); _renderTimer=setTimeout(()=>{ try{renderAll();}catch(e){console.error(e);} },120); } // više promjena odjednom -> jedno crtanje
+async function startSync(){
+  window._syncVerzija = window.FB.syncVerzija ? await window.FB.syncVerzija() : 1;
+  const delta = window._syncVerzija>=2 && window.FB.watchCollectionDelta;
+  if(delta) unsubscribers.push(window.FB.watchBrisanja());
+  const watch=(name,key)=>unsubscribers.push(delta
+    ? window.FB.watchCollectionDelta(name,arr=>{S[key]=arr;renderAllUskoro();})
+    : window.FB.watchCollection(name,arr=>{S[key]=arr;renderAll();}));
   watch('cistijerne','cistijerne');
   watch('firme','firme');
   watch('gradilista','gradilista');
@@ -6141,6 +6259,8 @@ function startSync(){
     unsubscribers.push(window.FB.watchCollection('users',arr=>{allUsers=arr;renderUsersList();}));
     unsubscribers.push(window.FB.watchCollection('auditLog',arr=>{allAuditLog=arr;renderAuditLog();}));
     unsubscribers.push(window.FB.watchDoc('settings/backup',data=>{lastBackupInfo=data;renderBackupStatus();}));
+    // Sigurnosna mreža (samo admin, jednom dnevno): zapis bez oznake vremena (npr. sa uređaja sa starom verzijom) dobije je
+    if(delta){ try{ if(localStorage.getItem('gl-provjera-oznaka')!==today() && navigator.onLine){ setTimeout(async()=>{ try{ const r=await window.FB.pripremiOznake(); localStorage.setItem('gl-provjera-oznaka',today()); if(r.dopunjeno) console.log('Dopunjene oznake:',r); }catch(e){console.warn(e);} },15000); } }catch(_){} }
   }
 }
 
