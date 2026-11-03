@@ -941,6 +941,20 @@ try{
   </div>
   <div class="card admin-only">
     <div class="card-title">📋 Transferi</div>
+    <div class="fil" style="margin-bottom:10px">
+      <input type="date" id="trf-od" onchange="renderTr()">
+      <input type="date" id="trf-do" onchange="renderTr()">
+      <button class="btn btn-s" onclick="trfPeriod('sedmica')">Ova sedmica</button>
+      <button class="btn btn-s" onclick="trfPeriod('mjesec')">Ovaj mjesec</button>
+      <button class="btn btn-s" onclick="trfPeriod('prosli')">Prošli mjesec</button>
+      <select id="trf-cis" onchange="renderTr()"><option value="">Sve cisterne</option></select>
+      <select id="trf-smjer" onchange="renderTr()"><option value="">daje ili prima</option><option value="daje">samo daje</option><option value="prima">samo prima</option></select>
+      <input type="text" id="trf-q" placeholder="Lokacija..." oninput="renderTr()" style="min-width:120px">
+      <button class="btn btn-s" onclick="trfReset()">✕ Očisti</button>
+      <button class="btn btn-s" onclick="trfExcel()">⬇ Excel</button>
+      <button class="btn btn-s" onclick="trfPdf()">🖨 PDF</button>
+    </div>
+    <div id="trf-sazetak"></div>
     <div id="lst-tr"><div class="empty">Nema transfera</div></div>
   </div>
 </div>
@@ -3613,19 +3627,109 @@ async function spremiTr(){
     renderTr();populateAll();toast('✓ Transfer sačuvan!');
   }catch(e){toast('⚠ Greška: '+e.message);}
 }
+// ═══ TRANSFERI — filter, sažetak po cisterni, sljedivost, izvoz (samo prikaz, ništa se ne mijenja) ═══
+function trfPeriod(p){
+  const d=new Date(), f=x=>x.toISOString().slice(0,10);
+  let od,dd;
+  if(p==='sedmica'){ const x=new Date(d); x.setDate(d.getDate()-((d.getDay()+6)%7)); od=f(x); dd=today(); }
+  else if(p==='mjesec'){ od=today().slice(0,8)+'01'; dd=today(); }
+  else { const x=new Date(d.getFullYear(),d.getMonth()-1,1), y=new Date(d.getFullYear(),d.getMonth(),0); od=`${x.getFullYear()}-${String(x.getMonth()+1).padStart(2,'0')}-01`; dd=`${y.getFullYear()}-${String(y.getMonth()+1).padStart(2,'0')}-${String(y.getDate()).padStart(2,'0')}`; }
+  document.getElementById('trf-od').value=od; document.getElementById('trf-do').value=dd; renderTr();
+}
+function trfReset(){ ['trf-od','trf-do','trf-q'].forEach(i=>{const e=document.getElementById(i);if(e)e.value='';}); ['trf-cis','trf-smjer'].forEach(i=>{const e=document.getElementById(i);if(e)e.value='';}); renderTr(); }
+function trfFiltrirani(){
+  const od=document.getElementById('trf-od')?.value||'', dd=document.getElementById('trf-do')?.value||'';
+  const cis=document.getElementById('trf-cis')?.value||'', smj=document.getElementById('trf-smjer')?.value||'';
+  const q=(document.getElementById('trf-q')?.value||'').trim().toLowerCase();
+  return [...S.transferi].filter(t=>{
+    const d=(t.datum||'').slice(0,10);
+    if(od&&d<od) return false; if(dd&&d>dd) return false;
+    if(cis){ const daje=t.cistijernDajeId===cis, prima=t.cistijernPrimaId===cis;
+      if(smj==='daje'&&!daje) return false; if(smj==='prima'&&!prima) return false; if(!smj&&!daje&&!prima) return false; }
+    if(q && !(t.lokacija||'').toLowerCase().includes(q)) return false;
+    return true;
+  }).sort((a,b)=>(a.datum||'').localeCompare(b.datum||''));
+}
+function trfSazetak(lista){
+  const m={};
+  lista.forEach(t=>{
+    [['d',t.cistijernDajeId],['p',t.cistijernPrimaId]].forEach(([k,cid])=>{ if(!m[cid]) m[cid]={dala:0,primila:0,br:0}; m[cid].br++; if(k==='d') m[cid].dala+=t.litara; else m[cid].primila+=t.litara; });
+  });
+  return Object.entries(m).map(([cid,x])=>({reg:gC(cid)?.reg||'?',...x,neto:x.primila-x.dala})).sort((a,b)=>a.reg.localeCompare(b.reg));
+}
 function renderTr(){
   const el=document.getElementById('lst-tr');
-  if(!S.transferi.length){el.innerHTML='<div class="empty">Nema transfera</div>';return;}
-  el.innerHTML='<div class="tw"><table><thead><tr><th>Datum</th><th>Daje</th><th>Prima</th><th>Litara</th><th>Lokacija</th><th></th></tr></thead><tbody>'+
-    [...S.transferi].sort((a,b)=>(a.datum||'').localeCompare(b.datum||'')).map(t=>{
+  const cs=document.getElementById('trf-cis');
+  if(cs){ const prev=cs.value; cs.innerHTML='<option value="">Sve cisterne</option>'+[...S.cistijerne].sort((a,b)=>a.reg.localeCompare(b.reg)).map(c=>`<option value="${c.id}">${c.reg}</option>`).join(''); cs.value=prev; }
+  if(!S.transferi.length){el.innerHTML='<div class="empty">Nema transfera</div>'; const sz=document.getElementById('trf-sazetak'); if(sz) sz.innerHTML=''; return;}
+  const lista=trfFiltrirani();
+  const sz=document.getElementById('trf-sazetak');
+  if(sz){
+    const uk=lista.reduce((a,t)=>a+t.litara,0), po=trfSazetak(lista);
+    sz.innerHTML=lista.length?`<div class="signal sig-info" style="font-size:12.5px;display:block"><b>${lista.length}</b> transfera · <b>${uk.toLocaleString('bs-BA')} L</b>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">${po.map(x=>`<span class="tag t-ok" style="font-size:11.5px">${x.reg}: dala ${x.dala.toLocaleString('bs-BA')} · primila ${x.primila.toLocaleString('bs-BA')} · <b style="color:${x.neto<0?'var(--red)':'var(--acc)'}">neto ${x.neto>0?'+':''}${x.neto.toLocaleString('bs-BA')} L</b></span>`).join('')}</div></div>`:'';
+  }
+  if(!lista.length){el.innerHTML='<div class="empty">Nema transfera za ovaj filter</div>';return;}
+  el.innerHTML='<div class="tw"><table><thead><tr><th>Datum</th><th>Daje</th><th>Prima</th><th>Litara</th><th>Lokacija</th><th>Porijeklo goriva</th><th></th></tr></thead><tbody>'+
+    lista.map(t=>{
       const cd=gC(t.cistijernDajeId),cp=gC(t.cistijernPrimaId);
-      return`<tr id="tr-row-${t.id}"><td class="mono">${(t.datum||'').replace('T',' ')}</td><td><span class="tag t-warn">${cd?cd.reg:'?'}</span></td><td><span class="tag t-ok">${cp?cp.reg:'?'}</span></td><td><span class="tag t-l">${t.litara}L</span></td><td style="font-size:12px;color:var(--mut2)">${t.lokacija||'—'}</td><td style="white-space:nowrap"><button class="btn btn-pr" style="padding:5px 9px;font-size:11px" onclick="printTransfer('${t.id}')">🖨</button> <button class="btn btn-s" style="padding:5px 9px;font-size:11px" onclick="urediTransfer('${t.id}')">✏️</button> <button class="btn btn-r" style="padding:5px 9px;font-size:11px" onclick="deleteTransfer('${t.id}')">✕</button></td></tr>`;
+      return`<tr id="tr-row-${t.id}"><td class="mono">${(t.datum||'').replace('T',' ')}${oznakaCeka('transferi',t.id)}</td><td><span class="tag t-warn">${cd?cd.reg:'?'}</span></td><td><span class="tag t-ok">${cp?cp.reg:'?'}</span></td><td><span class="tag t-l">${t.litara}L</span></td><td style="font-size:12px;color:var(--mut2)">${t.lokacija||'—'}</td><td style="font-size:11px;color:var(--acc4);max-width:260px">${opisAlokacije(t.izvorUlaza)}</td><td style="white-space:nowrap"><button class="btn btn-s" style="padding:5px 9px;font-size:11px" title="Gdje je ovo gorivo dalje otišlo" onclick="prikaziTokTransfera('${t.id}')">👁</button> <button class="btn btn-pr" style="padding:5px 9px;font-size:11px" onclick="printTransfer('${t.id}')">🖨</button> <button class="btn btn-s" style="padding:5px 9px;font-size:11px" onclick="urediTransfer('${t.id}')">✏️</button> <button class="btn btn-r" style="padding:5px 9px;font-size:11px" onclick="deleteTransfer('${t.id}')">✕</button></td></tr>`;
     }).join('')+'</tbody></table></div>';
+}
+// Gdje je gorivo iz ovog transfera dalje otišlo (vozila, gradilišta, novi transferi)
+function prikaziTokTransfera(id){
+  const t=S.transferi.find(x=>x.id===id); if(!t) return;
+  const cd=gC(t.cistijernDajeId), cp=gC(t.cistijernPrimaId);
+  const tok=tragZaSerijom('transfer:'+id,'').sort((a,b)=>(a.datum||'').localeCompare(b.datum||''));
+  const direkt=tok.filter(x=>!x.poreklo); // samo ono što je otišlo DIREKTNO iz cisterne koja je primila
+  const iskor=direkt.filter(x=>x.vrsta!=='Transfer').reduce((a,x)=>a+x.litara,0);
+  const dalje=direkt.filter(x=>x.vrsta==='Transfer').reduce((a,x)=>a+x.litara,0);
+  window._porekloExport={naslov:`Transfer ${cd?.reg||'?'} - ${cp?.reg||'?'} ${(t.datum||'').slice(0,10)}`, potrosnja:tok};
+  document.getElementById('print-title').textContent=`Transfer: ${cd?.reg||'?'} → ${cp?.reg||'?'} — ${(t.datum||'').slice(0,10)}`;
+  document.getElementById('print-body').innerHTML=`<div style="padding:20px;color:#000;font-size:12px">
+    <p><b>Litara:</b> ${t.litara} L &nbsp; <b>Lokacija:</b> ${t.lokacija||'—'} &nbsp; <b>Porijeklo:</b> ${opisAlokacije(t.izvorUlaza)}</p>
+    <p><b>Istočeno vozilima:</b> ${iskor.toFixed(1)} L &nbsp; <b>Prebačeno dalje:</b> ${dalje.toFixed(1)} L &nbsp; <b>Ostalo u ${cp?.reg||'cisterni'}:</b> ${(t.litara-iskor-dalje).toFixed(1)} L</p>
+    <div style="overflow-x:auto"><table style="width:100%;min-width:600px;border-collapse:collapse;margin-top:10px;font-size:10.5px" border="1" cellpadding="4">
+      <thead><tr style="background:#eee"><th>Datum</th><th>Vrsta</th><th>Vozač / kome</th><th>Vozilo</th><th>Gradilište</th><th>Firma</th><th>Litara</th><th>Put</th></tr></thead>
+      <tbody>${tok.length?tok.map(p=>`<tr><td style="white-space:nowrap">${(p.datum||'').replace('T',' ')}</td><td>${p.vrsta}</td><td>${p.ko||'—'}</td><td>${p.vozilo||'—'}</td><td>${p.gradiliste||'—'}</td><td>${p.firma||'—'}</td><td style="white-space:nowrap">${(+p.litara).toFixed(1)} L</td><td>${p.poreklo||'—'}</td></tr>`).join(''):'<tr><td colspan="8" style="text-align:center;color:#999">Iz ovog transfera još ništa nije istočeno</td></tr>'}</tbody></table></div></div>`;
+  document.getElementById('print-receipt-btn').style.display='none';
+  document.getElementById('print-poreklo-btn').style.display='none';
+  document.getElementById('print-export-btn').style.display='';
+  openModal('printModal');
+}
+function trfOpisFiltera(){
+  const od=document.getElementById('trf-od')?.value||'', dd=document.getElementById('trf-do')?.value||'';
+  const cis=document.getElementById('trf-cis')?.value||'', smj=document.getElementById('trf-smjer')?.value||'';
+  return [od||dd?`Period: ${od||'…'} – ${dd||'…'}`:'Period: sve', cis?`Cisterna: ${gC(cis)?.reg||'?'}${smj?' ('+smj+')':''}`:''].filter(Boolean).join(' · ');
+}
+function trfExcel(){
+  if(typeof XLSX==='undefined'){toast('⚠ Učitava se Excel biblioteka...',3000);return;}
+  const lista=trfFiltrirani(); if(!lista.length){toast('⚠ Nema transfera za ovaj filter.');return;}
+  const opis=trfOpisFiltera();
+  const r1=[[`Transferi — ${opis}`],[],['Datum','Daje','Prima','Litara','Lokacija','Porijeklo goriva (faktura)']].concat(lista.map(t=>[(t.datum||'').replace('T',' '),gC(t.cistijernDajeId)?.reg||'',gC(t.cistijernPrimaId)?.reg||'',t.litara,t.lokacija||'',opisAlokacije(t.izvorUlaza)]));
+  r1.push([],['UKUPNO','','',lista.reduce((a,t)=>a+t.litara,0)]);
+  const r2=[[`Sažetak po cisterni — ${opis}`],[],['Cisterna','Dala (L)','Primila (L)','Neto (L)','Broj transfera']].concat(trfSazetak(lista).map(x=>[x.reg,x.dala,x.primila,x.neto,x.br]));
+  const wb=XLSX.utils.book_new();
+  const ws1=XLSX.utils.aoa_to_sheet(r1); ws1['!cols']=[{wch:17},{wch:14},{wch:14},{wch:9},{wch:20},{wch:60}];
+  XLSX.utils.book_append_sheet(wb,ws1,'Transferi'); XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(r2),'Po cisterni');
+  XLSX.writeFile(wb,`transferi_${today()}.xlsx`); toast('✓ Excel preuzet!');
+}
+function trfPdf(){
+  const lista=trfFiltrirani(); if(!lista.length){toast('⚠ Nema transfera za ovaj filter.');return;}
+  const e=x=>String(x==null?'':x).replace(/&/g,'&amp;').replace(/</g,'&lt;');
+  const uk=lista.reduce((a,t)=>a+t.litara,0);
+  const html=`<!doctype html><html><head><meta charset="utf-8"><title>Transferi ${today()}</title><style>@page{size:A4 landscape;margin:10mm}body{font-family:Arial,sans-serif;font-size:10.5px;color:#000}h1{font-size:15px;margin:0}h3{font-size:12px;margin:12px 0 4px}table{width:100%;border-collapse:collapse}th,td{border:1px solid #999;padding:3px 5px;text-align:left}th{background:#eee;font-size:9.5px}td.r{text-align:right}tr.u td{font-weight:bold;background:#f3f3f3}.nop{margin-bottom:10px}@media print{.nop{display:none}}</style></head><body>
+<div class="nop"><button onclick="window.print()" style="padding:8px 16px;font-size:14px">🖨 Štampaj / Sačuvaj kao PDF</button></div>
+<h1>Transferi goriva${S.mojaFirma&&S.mojaFirma.naziv?' — '+e(S.mojaFirma.naziv):''}</h1><div>${e(trfOpisFiltera())} · štampano ${new Date().toLocaleString('bs-BA')}</div>
+<h3>Sažetak po cisterni</h3><table><tr><th>Cisterna</th><th>Dala</th><th>Primila</th><th>Neto</th><th>Transfera</th></tr>${trfSazetak(lista).map(x=>`<tr><td>${e(x.reg)}</td><td class="r">${x.dala.toLocaleString('bs-BA')} L</td><td class="r">${x.primila.toLocaleString('bs-BA')} L</td><td class="r">${x.neto>0?'+':''}${x.neto.toLocaleString('bs-BA')} L</td><td class="r">${x.br}</td></tr>`).join('')}</table>
+<h3>Transferi</h3><table><tr><th>Datum</th><th>Daje</th><th>Prima</th><th>Litara</th><th>Lokacija</th><th>Porijeklo goriva</th></tr>${lista.map(t=>`<tr><td style="white-space:nowrap">${e((t.datum||'').replace('T',' '))}</td><td>${e(gC(t.cistijernDajeId)?.reg||'?')}</td><td>${e(gC(t.cistijernPrimaId)?.reg||'?')}</td><td class="r">${t.litara} L</td><td>${e(t.lokacija||'')}</td><td>${e(opisAlokacije(t.izvorUlaza))}</td></tr>`).join('')}<tr class="u"><td colspan="3">UKUPNO (${lista.length})</td><td class="r">${uk.toLocaleString('bs-BA')} L</td><td colspan="2"></td></tr></table></body></html>`;
+  const w=window.open('','_blank'); if(!w){toast('⚠ Browser je blokirao novi prozor — dozvoli pop-up pa probaj ponovo.',5000);return;}
+  w.document.open();w.document.write(html);w.document.close(); setTimeout(()=>{try{w.focus();w.print();}catch(_){}},400);
 }
 function urediTransfer(id){
   const t=S.transferi.find(x=>x.id===id);if(!t)return;
   const row=document.getElementById('tr-row-'+id);if(!row)return;
-  row.innerHTML=`<td colspan="6" style="padding:10px">
+  row.innerHTML=`<td colspan="7" style="padding:10px">
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">
       <div class="fg" style="flex:1;min-width:140px"><label style="font-size:10px">Daje (cisterna)</label><select id="tre-daje-${id}">${S.cistijerne.map(c=>`<option value="${c.id}" ${c.id===t.cistijernDajeId?'selected':''}>${c.reg}</option>`).join('')}</select></div>
       <div class="fg" style="flex:1;min-width:140px"><label style="font-size:10px">Prima (cisterna)</label><select id="tre-prima-${id}">${S.cistijerne.map(c=>`<option value="${c.id}" ${c.id===t.cistijernPrimaId?'selected':''}>${c.reg}</option>`).join('')}</select></div>
