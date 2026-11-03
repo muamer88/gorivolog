@@ -1260,6 +1260,11 @@ try{
   </div>
 
   <div class="card admin-only">
+    <div class="card-title" style="display:flex;justify-content:space-between;align-items:center"><span>🩺 Zdravlje aplikacije</span><button class="btn btn-s" style="padding:5px 10px;font-size:12px" onclick="renderZdravlje()">↻ Osvježi</button></div>
+    <div id="zdravlje"><div class="empty">Klikni Osvježi</div></div>
+  </div>
+
+  <div class="card admin-only">
     <div class="card-title">📋 Log promjena (ko je šta radio)</div>
     <div class="signal sig-tip">Prikazuje zadnjih 100 osjetljivih radnji: brisanja, korekcije, upravljanje korisnicima, reset. Ovaj log se nikad ne briše, ni pri reset-u sistema.</div>
     <div class="tw"><table><thead><tr><th>Kada</th><th>Ko</th><th>Radnja</th><th>Detalji</th></tr></thead><tbody id="lst-auditlog"><tr><td colspan="4" style="text-align:center;color:var(--mut2)">Učitavanje...</td></tr></tbody></table></div>
@@ -5487,7 +5492,12 @@ sc.addEventListener('touchend',()=>sigDrw=false);
 function clearSig(){if(sigCtx){const c=document.getElementById('sigCanvas');sigCtx.fillStyle='#fff';sigCtx.fillRect(0,0,c.width,c.height);}}
 function saveSig(){
   const c=document.getElementById('sigCanvas');
-  const data=c.toDataURL('image/png');
+  // Potpis se čuva SMANJEN (širina 360px) - i dalje čitljiv na štampi, a 5-10x lakši za bazu i učitavanje
+  const W=360, H=Math.max(60,Math.round(c.height*W/(c.width||W)));
+  const m=document.createElement('canvas'); m.width=W; m.height=H;
+  const mx=m.getContext('2d'); mx.fillStyle='#fff'; mx.fillRect(0,0,W,H); mx.imageSmoothingQuality='high'; mx.drawImage(c,0,0,W,H);
+  let data=m.toDataURL('image/webp',0.6);
+  if(!data.startsWith('data:image/webp')) data=m.toDataURL('image/png');
   sigs[sigTarget]=data;
   const targets={entry:'e-sig-p',tr1:'tr-s1-p',tr2:'tr-s2-p',treca:'tl-sig-p'};
   const el=document.getElementById(targets[sigTarget]);
@@ -5654,6 +5664,44 @@ function renderCisternaSemafor(targetId){
   }).join('');
 }
 
+
+// ═══ ZDRAVLJE APLIKACIJE — koliko je baza velika i koliko brzo raste (samo čita podatke na uređaju) ═══
+const ZD_LIMIT_PROSTOR=1024*1024*1024, ZD_LIMIT_CITANJA=50000; // besplatni Firebase (Spark) plan
+function zdVelicina(o){ try{ return new Blob([JSON.stringify(o)]).size; }catch(_){ return JSON.stringify(o).length; } }
+function zdMB(b){ return b>=1048576?(b/1048576).toFixed(1)+' MB':(b/1024).toFixed(0)+' KB'; }
+function renderZdravlje(){
+  const el=document.getElementById('zdravlje'); if(!el) return;
+  const kol=[['Otpremnice',S.otpremnice],['Treća lica',S.otpremnice3],['Ulazi',S.ulazi],['Transferi',S.transferi],['Ture',S.ture||[]],['Brojači',S.brojaci||[]],['Vozila',S.vozila],['Gradilišta',S.gradilista],['Firme',S.firme]];
+  let ukDok=0, ukB=0;
+  const redovi=kol.map(([n,a])=>{ const b=zdVelicina(a); ukDok+=a.length; ukB+=b; return `<tr><td>${n}</td><td class="mono" style="text-align:right">${a.length.toLocaleString('bs-BA')}</td><td class="mono" style="text-align:right">${zdMB(b)}</td></tr>`; }).join('');
+  // Potpisi
+  let brPot=0, bPot=0;
+  [...S.otpremnice,...S.otpremnice3].forEach(o=>(o.stavke||[]).forEach(st=>{ if(st.sig){brPot++; bPot+=st.sig.length;} }));
+  (S.transferi||[]).forEach(t=>['sig1','sig2','sigDaje','sigPrima'].forEach(k=>{ if(t[k]&&typeof t[k]==='string'){brPot++; bPot+=t[k].length;} }));
+  // Rast: zadnjih 30 dana
+  const d30=new Date(Date.now()-30*864e5).toISOString().slice(0,10);
+  const nove=S.otpremnice.filter(o=>(o.datum||'')>=d30);
+  const rastMj=zdVelicina(nove)+zdVelicina(S.otpremnice3.filter(o=>(o.datum||'')>=d30))+zdVelicina((S.ture||[]).filter(t=>(t.datum||'')>=d30));
+  const mjeseciDoLimita=rastMj>0?Math.floor((ZD_LIMIT_PROSTOR-ukB)/rastMj):null;
+  const otvaranjaDnevno=ukDok>0?Math.floor(ZD_LIMIT_CITANJA/ukDok):null;
+  const pctProstor=ukB/ZD_LIMIT_PROSTOR*100;
+  const boja=x=>x?'var(--acc3)':'var(--red)';
+  const okProstor=pctProstor<60, okCit=otvaranjaDnevno==null||otvaranjaDnevno>=40;
+  el.innerHTML=`
+    <div class="grid2" style="margin-bottom:10px">
+      <div class="stat"><div class="stat-n" style="font-size:22px;color:${boja(okProstor)}">${zdMB(ukB)}</div><div class="stat-l">Veličina baze (≈ ${pctProstor.toFixed(1)}% od 1 GB besplatno)</div></div>
+      <div class="stat"><div class="stat-n" style="font-size:22px">${ukDok.toLocaleString('bs-BA')}</div><div class="stat-l">Zapisa koje uređaj učitava pri otvaranju</div></div>
+    </div>
+    <div class="tw"><table><thead><tr><th>Dio baze</th><th style="text-align:right">Zapisa</th><th style="text-align:right">Veličina</th></tr></thead><tbody>${redovi}</tbody></table></div>
+    <div style="font-size:12.5px;line-height:1.7;margin-top:10px">
+      ✍️ Potpisi: <b>${brPot.toLocaleString('bs-BA')}</b> kom · <b>${zdMB(bPot)}</b> (${ukB?Math.round(bPot/ukB*100):0}% baze). Novi potpisi se čuvaju smanjeni.<br>
+      📈 Rast zadnjih 30 dana: <b>${zdMB(rastMj)}</b>${mjeseciDoLimita!=null?` → do granice od 1 GB ima još oko <b>${mjeseciDoLimita>240?'20+ godina':mjeseciDoLimita+' mjeseci'}</b>`:''}.<br>
+      📖 Dnevna granica besplatnog plana je 50.000 čitanja. Jedno "puno" otvaranje aplikacije (prvi put na uređaju ili nakon duže pauze) troši oko <b>${ukDok.toLocaleString('bs-BA')}</b> čitanja → dovoljno za oko <b style="color:${boja(okCit)}">${otvaranjaDnevno!=null?otvaranjaDnevno.toLocaleString('bs-BA'):'—'}</b> takvih otvaranja dnevno, za sve uređaje zajedno.<br>
+      ${(!okProstor||!okCit)?'<span style="color:var(--red);font-weight:700">⚠ Vrijeme je za "mjesečno zatvaranje" (učitavanje samo novijih mjeseci) ili Blaze plan.</span>':'<span style="color:var(--acc3)">✓ Za sada sve u granicama.</span>'}
+    </div>
+    <div style="font-size:11px;color:var(--mut2);margin-top:6px">Procjena na osnovu podataka na ovom uređaju. Tačne brojke: Firebase konzola → Firestore → Usage.</div>`;
+}
+
 function initPost(){
   const mf=S.mojaFirma;
   document.getElementById('mf-n').value=mf.naziv||'';document.getElementById('mf-a').value=mf.adresa||'';
@@ -5664,6 +5712,7 @@ function initPost(){
   renderLists();
   renderUsersList();
   renderGorivoLista();
+  renderZdravlje();
 }
 
 // ═══ KORISNICI (prijave) ═══
